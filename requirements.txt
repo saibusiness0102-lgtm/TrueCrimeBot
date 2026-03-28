@@ -1,0 +1,11 @@
+groq
+gTTS
+moviepy==1.0.3
+feedparser
+wikipedia
+google-api-python-client
+google-auth-oauthlib
+requests
+imageio==2.25.1
+imageio-ffmpeg==0.4.9
+decorator==4.4.2
