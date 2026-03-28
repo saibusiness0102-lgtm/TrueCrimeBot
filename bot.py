@@ -10,6 +10,8 @@ import requests
 import textwrap
 import feedparser
 import wikipedia
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from gtts import gTTS
 from groq import Groq
 from moviepy.editor import *
@@ -190,14 +192,11 @@ def fetch_background_video():
 
 
 # ============================================
-# STEP 5 - ASSEMBLE VIDEO (MoviePy)
+# STEP 5 - ASSEMBLE VIDEO (PIL + MoviePy)
 # ============================================
 
 def assemble_video(audio_path, background_path, metadata):
     print("\n🎞️  Step 5: Assembling final video...")
-
-    from PIL import Image, ImageDraw, ImageFont
-    import numpy as np
 
     audio = AudioFileClip(audio_path)
     duration = audio.duration
@@ -219,14 +218,18 @@ def assemble_video(audio_path, background_path, metadata):
 
     # Create title card using PIL (no ImageMagick needed!)
     def make_title_frame(t):
-        img = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+        img = Image.new("RGB", (1280, 720), (0, 0, 0))
         draw = ImageDraw.Draw(img)
         title = metadata.get("title", "True Crime Story")
 
-        # Try to use a font, fallback to default
+        # Try system fonts, fallback to default
         try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 60)
-            small_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 30)
+            font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 60
+            )
+            small_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28
+            )
         except:
             font = ImageFont.load_default()
             small_font = font
@@ -236,12 +239,13 @@ def assemble_video(audio_path, background_path, metadata):
         lines = []
         current = ""
         for word in words:
-            if len(current + word) < 30:
+            if len(current + word) < 28:
                 current += word + " "
             else:
                 lines.append(current.strip())
                 current = word + " "
-        lines.append(current.strip())
+        if current:
+            lines.append(current.strip())
 
         # Draw title centered
         y = 720 // 2 - (len(lines) * 70) // 2
@@ -249,23 +253,22 @@ def assemble_video(audio_path, background_path, metadata):
             bbox = draw.textbbox((0, 0), line, font=font)
             w = bbox[2] - bbox[0]
             x = (1280 - w) // 2
-            # Shadow
-            draw.text((x+2, y+2), line, font=font, fill=(0, 0, 0, 200))
-            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+            draw.text((x + 2, y + 2), line, font=font, fill=(0, 0, 0))
+            draw.text((x, y), line, font=font, fill=(255, 255, 255))
             y += 70
 
         # Watermark bottom right
         wm = "True Crime Stories"
         bbox = draw.textbbox((0, 0), wm, font=small_font)
         w = bbox[2] - bbox[0]
-        draw.text((1280 - w - 20, 720 - 50), wm, font=small_font, fill=(150, 150, 150, 180))
+        draw.text((1280 - w - 20, 720 - 50), wm, font=small_font, fill=(150, 150, 150))
 
-        return np.array(img.convert("RGB"))
+        return np.array(img)
 
-    # Title shows for first 5 seconds with fade
-    title_clip = VideoClip(make_title_frame, duration=5).set_opacity(1)
+    # Title card for first 5 seconds
+    title_clip = VideoClip(make_title_frame, duration=5)
 
-    # Combine
+    # Combine all layers
     final = CompositeVideoClip([bg, overlay, title_clip.set_start(0)])
     final = final.set_audio(audio)
 
@@ -281,15 +284,7 @@ def assemble_video(audio_path, background_path, metadata):
 
     print(f"✅ Video assembled!")
     return output_path
-```
 
----
-
-## Also Add to `requirements.txt`
-
-Add this line:
-```
-Pillow==9.5.0
 
 # ============================================
 # STEP 6 - UPLOAD TO YOUTUBE (Token Based!)
@@ -298,7 +293,6 @@ Pillow==9.5.0
 def upload_to_youtube(video_path, metadata):
     print("\n📤 Step 6: Uploading to YouTube...")
 
-    # Load token from environment (GitHub Secret)
     token_data = json.loads(config.YOUTUBE_TOKEN)
 
     credentials = Credentials(
@@ -310,7 +304,7 @@ def upload_to_youtube(video_path, metadata):
         scopes=token_data.get("scopes")
     )
 
-    # Auto refresh token if expired
+    # Auto refresh if expired
     if credentials.expired and credentials.refresh_token:
         credentials.refresh(Request())
         print("🔄 Token refreshed!")
