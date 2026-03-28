@@ -1,5 +1,5 @@
 # ============================================
-# TRUE CRIME BOT - FULL PIPELINE
+# TRUE CRIME BOT - FINAL PIPELINE
 # Runs on GitHub Actions — No PC needed!
 # ============================================
 
@@ -13,7 +13,8 @@ import wikipedia
 from gtts import gTTS
 from groq import Groq
 from moviepy.editor import *
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import config
@@ -257,20 +258,29 @@ def assemble_video(audio_path, background_path, metadata):
 
 
 # ============================================
-# STEP 6 - UPLOAD TO YOUTUBE
+# STEP 6 - UPLOAD TO YOUTUBE (Token Based!)
 # ============================================
 
 def upload_to_youtube(video_path, metadata):
     print("\n📤 Step 6: Uploading to YouTube...")
 
-    # Write client secrets from environment
-    secrets_path = os.path.join(config.OUTPUT_FOLDER, "client_secrets.json")
-    with open(secrets_path, "w") as f:
-        f.write(config.YOUTUBE_CLIENT_SECRETS)
+    # Load token from environment (GitHub Secret)
+    token_data = json.loads(config.YOUTUBE_TOKEN)
 
-    scopes = ["https://www.googleapis.com/auth/youtube.upload"]
-    flow = InstalledAppFlow.from_client_secrets_file(secrets_path, scopes)
-    credentials = flow.run_local_server(port=0)
+    credentials = Credentials(
+        token=token_data.get("token"),
+        refresh_token=token_data.get("refresh_token"),
+        token_uri=token_data.get("token_uri"),
+        client_id=token_data.get("client_id"),
+        client_secret=token_data.get("client_secret"),
+        scopes=token_data.get("scopes")
+    )
+
+    # Auto refresh token if expired
+    if credentials.expired and credentials.refresh_token:
+        credentials.refresh(Request())
+        print("🔄 Token refreshed!")
+
     youtube = build("youtube", "v3", credentials=credentials)
 
     request_body = {
