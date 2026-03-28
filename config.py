@@ -1,31 +1,34 @@
 # ============================================
 # TRUE CRIME BOT - CONFIG
-# Keys are loaded from GitHub Secrets!
+# All keys loaded from GitHub Secrets!
 # ============================================
 
 import os
 
-# AI Script Generation (Groq - Free!)
+# Groq AI (Script Generation - Free!)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = "llama3-8b-8192"
 
-# Voiceover (gTTS - Completely Free!)
+# gTTS (Voiceover - Completely Free!)
 TTS_LANGUAGE = "en"
 TTS_SLOW = False
 
-# Pexels (Background footage)
+# Pexels (Background Footage - Free!)
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
-# YouTube
+# YouTube (Upload)
 YOUTUBE_CLIENT_SECRETS = os.environ.get("YOUTUBE_CLIENT_SECRETS", "")
+YOUTUBE_TOKEN = os.environ.get("YOUTUBE_TOKEN", "")
 
 # ============================================
 # SETTINGS
 # ============================================
 
 OUTPUT_FOLDER = "output"
-PREFER_WIKIPEDIA = False
+PREFER_WIKIPEDIA = False  # False = try RSS first, True = Wikipedia always
 
+# Famous cases — bot picks one randomly each run
+# Add more anytime!
 WIKIPEDIA_CASES = [
     "Zodiac Killer",
     "Jack the Ripper",
@@ -41,5 +44,8 @@ WIKIPEDIA_CASES = [
     "Springfield Three",
     "Tylenol murders",
     "Isabella Stewart Gardner Museum theft",
-    "Max Headroom broadcast intrusion"
+    "Max Headroom broadcast intrusion",
+    "Aileen Wuornos",
+    "Lizzie Borden",
+    "Boy in the box Philadelphia"
 ]
