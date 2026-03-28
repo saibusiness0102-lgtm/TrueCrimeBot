@@ -196,51 +196,77 @@ def fetch_background_video():
 def assemble_video(audio_path, background_path, metadata):
     print("\n🎞️  Step 5: Assembling final video...")
 
+    from PIL import Image, ImageDraw, ImageFont
+    import numpy as np
+
     audio = AudioFileClip(audio_path)
     duration = audio.duration
 
+    # Background video or fallback black screen
     if background_path and os.path.exists(background_path):
         bg = VideoFileClip(background_path).without_audio()
         if bg.duration < duration:
             loops = int(duration / bg.duration) + 1
             bg = concatenate_videoclips([bg] * loops)
-        bg = bg.subclip(0, duration).resize((1920, 1080))
+        bg = bg.subclip(0, duration).resize((1280, 720))
     else:
-        bg = ColorClip(size=(1920, 1080), color=(10, 10, 10), duration=duration)
+        bg = ColorClip(size=(1280, 720), color=(10, 10, 10), duration=duration)
 
+    # Dark overlay
     overlay = ColorClip(
-        size=(1920, 1080), color=(0, 0, 0), duration=duration
+        size=(1280, 720), color=(0, 0, 0), duration=duration
     ).set_opacity(0.5)
 
-    title_text = metadata.get("title", "True Crime Story")
-    title_clip = (
-        TextClip(
-            textwrap.fill(title_text, 30),
-            fontsize=70,
-            color="white",
-            font="Arial-Bold",
-            stroke_color="black",
-            stroke_width=2
-        )
-        .set_duration(5)
-        .set_position("center")
-        .fadein(1)
-        .fadeout(1)
-    )
+    # Create title card using PIL (no ImageMagick needed!)
+    def make_title_frame(t):
+        img = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        title = metadata.get("title", "True Crime Story")
 
-    watermark = (
-        TextClip(
-            "True Crime Stories",
-            fontsize=30,
-            color="gray",
-            font="Arial"
-        )
-        .set_duration(duration)
-        .set_position(("right", "bottom"))
-        .margin(right=20, bottom=20)
-    )
+        # Try to use a font, fallback to default
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 60)
+            small_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 30)
+        except:
+            font = ImageFont.load_default()
+            small_font = font
 
-    final = CompositeVideoClip([bg, overlay, title_clip, watermark])
+        # Word wrap title
+        words = title.split()
+        lines = []
+        current = ""
+        for word in words:
+            if len(current + word) < 30:
+                current += word + " "
+            else:
+                lines.append(current.strip())
+                current = word + " "
+        lines.append(current.strip())
+
+        # Draw title centered
+        y = 720 // 2 - (len(lines) * 70) // 2
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            x = (1280 - w) // 2
+            # Shadow
+            draw.text((x+2, y+2), line, font=font, fill=(0, 0, 0, 200))
+            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+            y += 70
+
+        # Watermark bottom right
+        wm = "True Crime Stories"
+        bbox = draw.textbbox((0, 0), wm, font=small_font)
+        w = bbox[2] - bbox[0]
+        draw.text((1280 - w - 20, 720 - 50), wm, font=small_font, fill=(150, 150, 150, 180))
+
+        return np.array(img.convert("RGB"))
+
+    # Title shows for first 5 seconds with fade
+    title_clip = VideoClip(make_title_frame, duration=5).set_opacity(1)
+
+    # Combine
+    final = CompositeVideoClip([bg, overlay, title_clip.set_start(0)])
     final = final.set_audio(audio)
 
     output_path = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
@@ -255,7 +281,15 @@ def assemble_video(audio_path, background_path, metadata):
 
     print(f"✅ Video assembled!")
     return output_path
+```
 
+---
+
+## Also Add to `requirements.txt`
+
+Add this line:
+```
+Pillow==9.5.0
 
 # ============================================
 # STEP 6 - UPLOAD TO YOUTUBE (Token Based!)
