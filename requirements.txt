@@ -5,7 +5,10 @@ feedparser
 wikipedia
 google-api-python-client
 google-auth-oauthlib
+google-auth
 requests
 imageio==2.25.1
 imageio-ffmpeg==0.4.9
 decorator==4.4.2
+Pillow==9.5.0
+numpy==1.26.4
