@@ -1,5 +1,6 @@
 groq
 gTTS
+pydub
 moviepy==1.0.3
 feedparser
 wikipedia
