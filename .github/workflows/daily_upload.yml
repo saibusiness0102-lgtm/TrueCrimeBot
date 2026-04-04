@@ -1,9 +1,9 @@
-name: TrueCrimeBot - Daily YouTube Upload
+name: Archive of Enigmas - Daily Upload
 
 on:
   schedule:
-    - cron: '30 4 * * *'
-  workflow_dispatch:
+    - cron: '30 12 * * *'  # 6:00 PM IST daily (peak Indian + US overlap)
+  workflow_dispatch:        # Manual trigger anytime
 
 jobs:
   run-bot:
@@ -23,11 +23,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-liberation imagemagick
 
+      - name: Fix ImageMagick security policy
+        run: |
+          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
+
       - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
 
-      - name: Run TrueCrimeBot
+      - name: Run Archive of Enigmas Bot
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -35,7 +39,3 @@ jobs:
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
         run: |
           python bot.py
-          
-      - name: Fix ImageMagick security policy
-        run: |
-          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml
