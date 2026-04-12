@@ -1,42 +1,47 @@
 # ============================================
-# ARCHIVE OF ENIGMAS - CONFIG v5
+# ARCHIVE OF ENIGMAS - CONFIG v6
+# 100% FREE — No paid services
 # ============================================
 
 import os
 
 # ============================================
-# API KEYS — set these as GitHub Secrets
+# API KEYS — set as GitHub Secrets
 # ============================================
 
-GROQ_API_KEY     = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL       = "llama-3.3-70b-versatile"
+GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL     = "llama-3.3-70b-versatile"
 
-PEXELS_API_KEY   = os.environ.get("PEXELS_API_KEY", "")
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
 
-# ElevenLabs — for human-quality voice (HIGHLY RECOMMENDED)
-# Free tier: 10,000 chars/month. Starter: $5/mo for 30k chars.
-# Sign up: https://elevenlabs.io
-# Get API key from: https://elevenlabs.io/app/settings/api-keys
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-
-# ElevenLabs Voice ID — choose a deep, dramatic male voice
-# Recommended voices (copy the ID from ElevenLabs voice library):
-#   "pNInz6obpgDQGcFmaJgB"  → Adam (deep, authoritative)
-#   "VR6AewLTigWG4xSOukaG"  → Arnold (strong)
-#   "ErXwobaYiN019PkySvjV"  → Antoni (warm, narrative)
-#   "yoZ06aMxZJJ28mfd3POQ"  → Sam (clear, documentary)
-ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+# Pixabay — FREE backup video source
+# Sign up free: https://pixabay.com/api/docs/
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "")
 
 # YouTube OAuth
 YOUTUBE_CLIENT_SECRETS = os.environ.get("YOUTUBE_CLIENT_SECRETS", "")
 YOUTUBE_TOKEN          = os.environ.get("YOUTUBE_TOKEN", "")
 
 # ============================================
+# VOICE — edge-tts (FREE Microsoft Neural, no key)
+# ============================================
+# Best voices for true crime:
+#   en-US-ChristopherNeural  — deep, authoritative  ✅ recommended
+#   en-GB-RyanNeural         — British, cinematic
+#   en-US-GuyNeural          — clear American narrator
+#   en-US-EricNeural         — warm, gripping
+#   en-IE-ConnorNeural       — Irish accent, distinctive
+
+TTS_VOICE  = "en-US-ChristopherNeural"
+TTS_RATE   = "-5%"    # Slightly slower = more dramatic
+TTS_VOLUME = "+0%"
+
+# ============================================
 # CHANNEL SETTINGS
 # ============================================
 
 OUTPUT_FOLDER    = "output"
-PREFER_WIKIPEDIA = False          # Set True to skip RSS and use Wikipedia only
+PREFER_WIKIPEDIA = False
 CHANNEL_NAME     = "Archive of Enigmas"
 CHANNEL_HANDLE   = "@Archive-of-Enigmas-04"
 
@@ -53,13 +58,13 @@ BASE_HASHTAGS = [
 ]
 
 NICHE_HASHTAGS = {
-    "murder":      ["#MurderCase", "#KillerCaught", "#TrueMurder"],
-    "missing":     ["#MissingPerson", "#ColdCaseMystery", "#MissingPersons"],
-    "serial":      ["#SerialKiller", "#SerialKillerStories", "#TrueSerialKiller"],
-    "unsolved":    ["#UnsolvedCrime", "#OpenCase", "#Unexplained"],
-    "heist":       ["#TrueCrimeHeist", "#RobberyStory", "#CrimeStories"],
-    "cult":        ["#CultDocumentary", "#DarkCults", "#TrueCrimeCult"],
-    "coldcase":    ["#ColdCase", "#ColdCaseSolved", "#ColdCaseMystery"],
-    "conspiracy":  ["#ConspiracyTheory", "#DarkSecrets", "#HiddenTruth"],
-    "default":     ["#CrimePodcast", "#TrueEvents", "#RealCrime"]
+    "murder":     ["#MurderCase", "#KillerCaught", "#TrueMurder"],
+    "missing":    ["#MissingPerson", "#ColdCaseMystery", "#MissingPersons"],
+    "serial":     ["#SerialKiller", "#SerialKillerStories", "#TrueSerialKiller"],
+    "unsolved":   ["#UnsolvedCrime", "#OpenCase", "#Unexplained"],
+    "heist":      ["#TrueCrimeHeist", "#RobberyStory", "#CrimeStories"],
+    "cult":       ["#CultDocumentary", "#DarkCults", "#TrueCrimeCult"],
+    "coldcase":   ["#ColdCase", "#ColdCaseSolved", "#ColdCaseMystery"],
+    "conspiracy": ["#ConspiracyTheory", "#DarkSecrets", "#HiddenTruth"],
+    "default":    ["#CrimePodcast", "#TrueEvents", "#RealCrime"]
 }
