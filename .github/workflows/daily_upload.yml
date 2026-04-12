@@ -28,11 +28,18 @@ jobs:
       # 8 GB swap gives us ~15 GB total virtual memory.
       - name: Add 8 GB swap space
         run: |
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          echo "✅ Swap enabled:"
+          # GitHub runners sometimes pre-create /swapfile (already busy).
+          # Use a different path and dd, which works on any filesystem.
+          SWAP=/mnt/swapfile-bot
+          if ! swapon --show | grep -q "$SWAP"; then
+            sudo dd if=/dev/zero of=$SWAP bs=1M count=8192 status=none
+            sudo chmod 600 $SWAP
+            sudo mkswap $SWAP -q
+            sudo swapon $SWAP
+            echo "✅ 8 GB swap added at $SWAP"
+          else
+            echo "✅ Swap already active — skipping"
+          fi
           free -h
 
       # ── 3. PYTHON ──────────────────────────────────────────
