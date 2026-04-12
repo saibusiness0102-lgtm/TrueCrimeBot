@@ -650,7 +650,9 @@ def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
         if crop.size == 0: return np.zeros((H,W,3),dtype=np.uint8)
         return np.array(Image.fromarray(crop).resize((W,H),Image.LANCZOS))
 
-    return VideoClip(make_frame, duration=duration)
+    clip = VideoClip(make_frame, duration=duration)
+    clip.size = (W, H)
+    return clip
 
 
 # ============================================
@@ -719,7 +721,9 @@ def create_chapter_card(text, duration=3.0, W=1920, H=1080, style="cinematic"):
 
         return np.array(img)
 
-    return VideoClip(make_frame, duration=duration)
+    clip = VideoClip(make_frame, duration=duration)
+    clip.size = (W, H)
+    return clip
 
 
 # ============================================
@@ -787,11 +791,11 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
         if m_type == "image":
             kb = make_ken_burns_clip(m_data, clip_dur, m_extra, W, H)
             dark_ov = ColorClip(size=(W,H), color=(0,0,0), duration=clip_dur).set_opacity(0.25)
-            clip = CompositeVideoClip([kb, dark_ov])
+            clip = CompositeVideoClip([kb, dark_ov], size=(W, H))
         else:
             clip = process_video_clip(m_data, clip_dur, W, H)
             dark_ov = ColorClip(size=(W,H), color=(0,0,0), duration=clip_dur).set_opacity(0.22)
-            clip = CompositeVideoClip([clip, dark_ov])
+            clip = CompositeVideoClip([clip, dark_ov], size=(W, H))
 
         clips.append(clip)
         time_used += clip_dur
@@ -802,10 +806,10 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
 
     print(f"  🔗 Joining {len(clips)} clips...")
     try:
-        video = concatenate_videoclips(clips, method="compose")
-    except Exception as e:
-        print(f"  ⚠️ compose failed: {e}, trying chain...")
         video = concatenate_videoclips(clips, method="chain")
+    except Exception as e:
+        print(f"  ⚠️ chain failed: {e}, trying compose...")
+        video = concatenate_videoclips(clips, method="compose")
 
     # Free clip RAM immediately after concat
     for _c in clips:
@@ -828,8 +832,10 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
         draw.text((24, 10), config.WATERMARK_TEXT, font=font, fill=(210,210,210,140))
         return np.array(img.convert("RGB"))
 
-    wm    = VideoClip(wm_frame, duration=total_dur).set_position(("left","bottom")).set_opacity(config.WATERMARK_OPACITY)
-    final = CompositeVideoClip([video, wm]).set_audio(audio)
+    _wm_clip = VideoClip(wm_frame, duration=total_dur)
+    _wm_clip.size = (W, 44)
+    wm    = _wm_clip.set_position(("left","bottom")).set_opacity(config.WATERMARK_OPACITY)
+    final = CompositeVideoClip([video, wm], size=(W, H)).set_audio(audio)
     out   = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
     print("  💾 Writing final video (1080p)...")
     # threads=2: leave headroom so the runner OS isn't starved
@@ -892,7 +898,9 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
             if crop.size == 0: return np.zeros((H,W,3),dtype=np.uint8)
             return np.array(Image.fromarray(crop).resize((W,H),Image.LANCZOS))
 
-        return VideoClip(make_frame, duration=duration)
+        _vc = VideoClip(make_frame, duration=duration)
+        _vc.size = (W, H)
+        return _vc
 
     clips = []
     for i, img_path in enumerate(used_images):
@@ -922,8 +930,10 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
             draw.text((36,140), line2, font=f_title, fill=(255,255,0,255))
             return np.array(img.convert("RGB"))
 
-        caption_clip = VideoClip(make_caption, duration=clip_dur).set_position(("center", H-220))
-        composed     = CompositeVideoClip([clip, dark_ov, caption_clip])
+        _cc = VideoClip(make_caption, duration=clip_dur)
+        _cc.size = (W, 220)
+        caption_clip = _cc.set_position(("center", H-220))
+        composed     = CompositeVideoClip([clip, dark_ov, caption_clip], size=(W, H))
         clips.append(composed)
 
     video = concatenate_videoclips(clips, method="compose")
