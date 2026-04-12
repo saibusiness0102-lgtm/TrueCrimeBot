@@ -23,6 +23,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+import gc
 import config
 
 # ============================================
@@ -806,6 +807,13 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
         print(f"  ⚠️ compose failed: {e}, trying chain...")
         video = concatenate_videoclips(clips, method="chain")
 
+    # Free clip RAM immediately after concat
+    for _c in clips:
+        try: _c.close()
+        except: pass
+    clips.clear()
+    gc.collect()
+
     if video.duration > total_dur + 0.5:
         video = video.subclip(0, total_dur)
 
@@ -824,8 +832,12 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     final = CompositeVideoClip([video, wm]).set_audio(audio)
     out   = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
     print("  💾 Writing final video (1080p)...")
+    # threads=2: leave headroom so the runner OS isn't starved
     final.write_videofile(out, fps=config.VIDEO_FPS, codec="libx264", audio_codec="aac",
-                          threads=4, preset="ultrafast", bitrate=config.VIDEO_BITRATE, logger=None)
+                          threads=2, preset="ultrafast", bitrate=config.VIDEO_BITRATE, logger=None)
+    try: video.close(); wm.close(); final.close(); audio.close()
+    except: pass
+    gc.collect()
     print(f"✅ Documentary assembled! ({total_dur/60:.1f} mins)")
     return out
 
@@ -921,7 +933,10 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
     out   = os.path.join(config.OUTPUT_FOLDER, "shorts_video.mp4")
     print("  💾 Writing Shorts (1080x1920)...")
     final.write_videofile(out, fps=30, codec="libx264", audio_codec="aac",
-                          threads=4, preset="ultrafast", bitrate="6000k", logger=None)
+                          threads=2, preset="ultrafast", bitrate="6000k", logger=None)
+    try: video.close(); final.close()
+    except: pass
+    gc.collect()
     print(f"✅ Short assembled! ({total_dur:.0f}s)")
     return out
 
