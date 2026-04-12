@@ -1,35 +1,47 @@
 # ============================================
-# ARCHIVE OF ENIGMAS - CONFIG
+# ARCHIVE OF ENIGMAS - CONFIG v5
 # ============================================
 
 import os
 
-# Groq AI
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# ============================================
+# API KEYS — set these as GitHub Secrets
+# ============================================
 
-# gTTS
-TTS_LANGUAGE = "en"
-TTS_SLOW = False
+GROQ_API_KEY     = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL       = "llama-3.3-70b-versatile"
 
-# Pexels
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+PEXELS_API_KEY   = os.environ.get("PEXELS_API_KEY", "")
 
-# YouTube
+# ElevenLabs — for human-quality voice (HIGHLY RECOMMENDED)
+# Free tier: 10,000 chars/month. Starter: $5/mo for 30k chars.
+# Sign up: https://elevenlabs.io
+# Get API key from: https://elevenlabs.io/app/settings/api-keys
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+
+# ElevenLabs Voice ID — choose a deep, dramatic male voice
+# Recommended voices (copy the ID from ElevenLabs voice library):
+#   "pNInz6obpgDQGcFmaJgB"  → Adam (deep, authoritative)
+#   "VR6AewLTigWG4xSOukaG"  → Arnold (strong)
+#   "ErXwobaYiN019PkySvjV"  → Antoni (warm, narrative)
+#   "yoZ06aMxZJJ28mfd3POQ"  → Sam (clear, documentary)
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
+
+# YouTube OAuth
 YOUTUBE_CLIENT_SECRETS = os.environ.get("YOUTUBE_CLIENT_SECRETS", "")
-YOUTUBE_TOKEN = os.environ.get("YOUTUBE_TOKEN", "")
+YOUTUBE_TOKEN          = os.environ.get("YOUTUBE_TOKEN", "")
 
 # ============================================
-# SETTINGS
+# CHANNEL SETTINGS
 # ============================================
 
-OUTPUT_FOLDER = "output"
-PREFER_WIKIPEDIA = False
-CHANNEL_NAME = "Archive of Enigmas"
-CHANNEL_HANDLE = "@Archive-of-Enigmas-04"
+OUTPUT_FOLDER    = "output"
+PREFER_WIKIPEDIA = False          # Set True to skip RSS and use Wikipedia only
+CHANNEL_NAME     = "Archive of Enigmas"
+CHANNEL_HANDLE   = "@Archive-of-Enigmas-04"
 
 # ============================================
-# VIRAL HASHTAGS
+# HASHTAGS
 # ============================================
 
 BASE_HASHTAGS = [
@@ -41,28 +53,13 @@ BASE_HASHTAGS = [
 ]
 
 NICHE_HASHTAGS = {
-    "murder":   ["#MurderCase", "#KillerCaught", "#TrueMurder"],
-    "missing":  ["#MissingPerson", "#ColdCaseMystery", "#MissingPersons"],
-    "serial":   ["#SerialKiller", "#SerialKillerStories", "#TrueSerialKiller"],
-    "unsolved": ["#UnsolvedCrime", "#OpenCase", "#Unexplained"],
-    "default":  ["#CrimePodcast", "#TrueEvents", "#RealCrime"]
+    "murder":      ["#MurderCase", "#KillerCaught", "#TrueMurder"],
+    "missing":     ["#MissingPerson", "#ColdCaseMystery", "#MissingPersons"],
+    "serial":      ["#SerialKiller", "#SerialKillerStories", "#TrueSerialKiller"],
+    "unsolved":    ["#UnsolvedCrime", "#OpenCase", "#Unexplained"],
+    "heist":       ["#TrueCrimeHeist", "#RobberyStory", "#CrimeStories"],
+    "cult":        ["#CultDocumentary", "#DarkCults", "#TrueCrimeCult"],
+    "coldcase":    ["#ColdCase", "#ColdCaseSolved", "#ColdCaseMystery"],
+    "conspiracy":  ["#ConspiracyTheory", "#DarkSecrets", "#HiddenTruth"],
+    "default":     ["#CrimePodcast", "#TrueEvents", "#RealCrime"]
 }
-
-# ============================================
-# WIKIPEDIA CASES
-# ============================================
-
-WIKIPEDIA_CASES = [
-    "Zodiac Killer", "Jack the Ripper", "DB Cooper",
-    "Black Dahlia murder", "Tamam Shud case",
-    "Dyatlov Pass incident", "Isdal Woman",
-    "Boy in the box Philadelphia", "Golden State Killer",
-    "Ted Bundy", "Jeffrey Dahmer", "John Wayne Gacy",
-    "Aileen Wuornos", "BTK killer", "Lizzie Borden",
-    "Jonbenet Ramsey", "Tylenol murders",
-    "Sodder children disappearance", "Springfield Three",
-    "Villisca axe murders", "Axeman of New Orleans",
-    "Cleveland torso murderer", "Wonderland murders",
-    "Isabella Stewart Gardner Museum theft",
-    "Max Headroom broadcast intrusion"
-]
