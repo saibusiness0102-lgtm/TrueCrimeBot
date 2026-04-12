@@ -1,10 +1,10 @@
-name: Archive of Enigmas - Daily Upload v5
+name: Archive of Enigmas - Daily Upload v6
 
 on:
   schedule:
-    - cron: '30 12 * * *'   # 6:00 PM IST — prime time upload
-    - cron: '30 3 * * *'    # 9:00 AM IST — morning upload (2 uploads/day)
-  workflow_dispatch:         # Manual trigger anytime
+    - cron: '30 12 * * *'   # 6:00 PM IST
+    - cron: '30 3 * * *'    # 9:00 AM IST
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -33,7 +33,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      # Restore upload history so the bot remembers what it already uploaded
       - name: Restore upload history
         uses: actions/cache@v4
         with:
@@ -46,14 +45,12 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
-          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
         run: |
           python bot.py
 
-      # Save updated history so next run knows what was uploaded
       - name: Save upload history
         uses: actions/cache@v4
         with:
