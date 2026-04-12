@@ -1,6 +1,7 @@
 # ============================================
-# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v5
-# ElevenLabs voice | Auto Shorts | 3 thumbnail styles
+# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v6
+# 100% FREE — edge-tts neural voice (no API key)
+# Auto Shorts | 3 thumbnail styles | Background music
 # Topic rotation | Title diversity guard | 6 sources
 # ============================================
 
@@ -10,10 +11,11 @@ import json
 import math
 import random
 import shutil
+import asyncio
 import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
-from gtts import gTTS
+import edge_tts                      # Free Microsoft Neural TTS — no key needed
 from groq import Groq
 import feedparser
 import wikipedia
@@ -281,16 +283,11 @@ def fetch_images(queries, target=18):
 # STEP 4 — FETCH VIDEOS
 # ============================================
 
-def fetch_videos(queries, target=10):
-    print(f"\n🎥 Fetching {target} atmospheric video clips...")
-    vid_dir  = os.path.join(config.OUTPUT_FOLDER, "videos")
-    if os.path.exists(vid_dir): shutil.rmtree(vid_dir)
-    os.makedirs(vid_dir, exist_ok=True)
-
+def fetch_videos_pexels(queries, target, vid_dir):
+    """Fetch videos from Pexels (free)"""
     headers  = {"Authorization": config.PEXELS_API_KEY}
     videos   = []
     used_ids = set()
-
     for query in queries:
         if len(videos) >= target: break
         try:
@@ -311,9 +308,65 @@ def fetch_videos(queries, target=10):
                     with open(path, "wb") as f:
                         for chunk in r.iter_content(8192): f.write(chunk)
                     videos.append({"path": path, "duration": item.get("duration", 10)})
-                    print(f"  🎥 Video {len(videos)}: {query[:38]} ({item.get('duration', 0)}s)")
+                    print(f"  🎥 [Pexels] {len(videos)}: {query[:35]}")
         except Exception as e:
-            print(f"  ⚠️ Video error: {e}")
+            print(f"  ⚠️ Pexels video error: {e}")
+    return videos
+
+
+def fetch_videos_pixabay(queries, target, vid_dir, start_idx=0):
+    """Fetch videos from Pixabay — 100% free, no attribution needed"""
+    if not config.PIXABAY_API_KEY:
+        return []
+    videos   = []
+    used_ids = set()
+    for query in queries:
+        if len(videos) >= target: break
+        try:
+            resp = requests.get(
+                f"https://pixabay.com/api/videos/?key={config.PIXABAY_API_KEY}"
+                f"&q={requests.utils.quote(query)}&per_page=3&min_duration=5&max_duration=25&video_type=film",
+                timeout=10)
+            items = resp.json().get("hits", [])
+            for item in items:
+                if len(videos) >= target: break
+                if item["id"] in used_ids: continue
+                used_ids.add(item["id"])
+                # Pick medium quality
+                vids = item.get("videos", {})
+                chosen_url = (vids.get("medium", {}).get("url") or
+                              vids.get("small", {}).get("url") or
+                              vids.get("large", {}).get("url"))
+                if not chosen_url: continue
+                dur = item.get("duration", 10)
+                idx = start_idx + len(videos)
+                path = os.path.join(vid_dir, f"vid_{idx:03d}.mp4")
+                r = requests.get(chosen_url, stream=True, timeout=30)
+                if r.status_code == 200:
+                    with open(path, "wb") as f:
+                        for chunk in r.iter_content(8192): f.write(chunk)
+                    videos.append({"path": path, "duration": dur})
+                    print(f"  🎥 [Pixabay] {len(videos)}: {query[:35]}")
+        except Exception as e:
+            print(f"  ⚠️ Pixabay video error: {e}")
+    return videos
+
+
+def fetch_videos(queries, target=10):
+    print(f"\n🎥 Fetching {target} atmospheric video clips...")
+    vid_dir  = os.path.join(config.OUTPUT_FOLDER, "videos")
+    if os.path.exists(vid_dir): shutil.rmtree(vid_dir)
+    os.makedirs(vid_dir, exist_ok=True)
+
+    # Try Pexels first
+    videos = fetch_videos_pexels(queries, target, vid_dir)
+
+    # Fill remaining with Pixabay if needed
+    if len(videos) < target and config.PIXABAY_API_KEY:
+        needed = target - len(videos)
+        print(f"  🔄 Getting {needed} more from Pixabay...")
+        extra = fetch_videos_pixabay(queries, needed, vid_dir, start_idx=len(videos))
+        videos.extend(extra)
 
     print(f"✅ {len(videos)} video clips fetched!")
     return videos
@@ -441,129 +494,151 @@ CHAPTERS: (YouTube timestamps one per line like "0:00 The Opening")
 
 
 # ============================================
-# STEP 6 — VOICEOVER (ElevenLabs primary, gTTS fallback)
+# STEP 6 — VOICEOVER (edge-tts — FREE Microsoft Neural)
+# No API key. No account. No limits.
+# Voices sound very close to ElevenLabs quality.
 # ============================================
 
-def generate_voiceover_elevenlabs(text, output_path):
-    """Use ElevenLabs for human-quality voice"""
-    api_key = config.ELEVENLABS_API_KEY
-    if not api_key:
-        return False
+# Best free voices for true crime narration:
+#   en-US-ChristopherNeural  — deep, authoritative male  ✅ best for true crime
+#   en-GB-RyanNeural         — British male, very cinematic
+#   en-US-GuyNeural          — clear American male
+#   en-US-EricNeural         — warm male narrator
+#   en-IE-ConnorNeural       — Irish accent, very distinctive
 
-    voice_id = config.ELEVENLABS_VOICE_ID  # e.g. "pNInz6obpgDQGcFmaJgB" (Adam)
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
-    headers = {
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": api_key
-    }
-    payload = {
-        "text": text,
-        "model_id": "eleven_turbo_v2",
-        "voice_settings": {
-            "stability": 0.4,
-            "similarity_boost": 0.8,
-            "style": 0.3,
-            "use_speaker_boost": True
-        }
-    }
-
-    # ElevenLabs has ~2500 char limit per request — chunk it
-    max_chars = 2400
-    chunks = []
-    remaining = text
-    while len(remaining) > max_chars:
-        cut = remaining.rfind(". ", 0, max_chars)
-        if cut == -1: cut = max_chars
-        chunks.append(remaining[:cut + 1])
-        remaining = remaining[cut + 1:].strip()
-    if remaining: chunks.append(remaining)
-
-    chunk_paths = []
-    for i, chunk in enumerate(chunks):
-        p = os.path.join(config.OUTPUT_FOLDER, f"el_chunk_{i}.mp3")
-        try:
-            resp = requests.post(url, json={**payload, "text": chunk}, headers=headers, stream=True, timeout=60)
-            if resp.status_code == 200:
-                with open(p, "wb") as f:
-                    for part in resp.iter_content(chunk_size=8192): f.write(part)
-                chunk_paths.append(p)
-                print(f"  🎙️ ElevenLabs chunk {i+1}/{len(chunks)}")
-            else:
-                print(f"  ⚠️ ElevenLabs error {resp.status_code}: {resp.text[:100]}")
-                return False
-        except Exception as e:
-            print(f"  ⚠️ ElevenLabs exception: {e}")
-            return False
-
-    if len(chunk_paths) == 1:
-        shutil.copy(chunk_paths[0], output_path)
-    else:
-        clips = [AudioFileClip(p) for p in chunk_paths]
-        merged = concatenate_audioclips(clips)
-        merged.write_audiofile(output_path, logger=None)
-        for c in clips: c.close()
-
-    for p in chunk_paths:
-        try: os.remove(p)
-        except: pass
-
-    return True
-
-
-def generate_voiceover_gtts(text, output_path):
-    """gTTS fallback"""
-    max_chars = 4800
-    clean = re.sub(r'\[.*?\]', '', text).replace("[PAUSE]", "...").strip()
-    clean = re.sub(r'\n{3,}', '\n\n', clean)
-
-    chunks = []
-    while len(clean) > max_chars:
-        cut = clean.rfind('. ', 0, max_chars)
-        if cut == -1: cut = max_chars
-        chunks.append(clean[:cut + 1])
-        clean = clean[cut + 1:].strip()
-    if clean: chunks.append(clean)
-
-    chunk_paths = []
-    for i, chunk in enumerate(chunks):
-        p = os.path.join(config.OUTPUT_FOLDER, f"gtts_chunk_{i}.mp3")
-        gTTS(text=chunk, lang="en", slow=False).save(p)
-        chunk_paths.append(p)
-        print(f"  🎙️ gTTS chunk {i+1}/{len(chunks)}")
-
-    if len(chunk_paths) == 1:
-        shutil.copy(chunk_paths[0], output_path)
-    else:
-        clips = [AudioFileClip(p) for p in chunk_paths]
-        merged = concatenate_audioclips(clips)
-        merged.write_audiofile(output_path, logger=None)
-        for c in clips: c.close()
-
-    for p in chunk_paths:
-        try: os.remove(p)
-        except: pass
+async def _edge_tts_chunk(text, voice, output_path):
+    """Generate a single audio chunk using edge-tts"""
+    communicate = edge_tts.Communicate(text, voice, rate=config.TTS_RATE, volume=config.TTS_VOLUME)
+    await communicate.save(output_path)
 
 
 def generate_voiceover(script, label="voiceover"):
-    print(f"\n🎙️  Generating {label}...")
+    print(f"\n🎙️  Generating {label} with edge-tts ({config.TTS_VOICE})...")
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
     audio_path = os.path.join(config.OUTPUT_FOLDER, f"{label}.mp3")
 
-    clean = re.sub(r'\[.*?\]', '', script).replace("[PAUSE]", "...").strip()
+    # Clean script — remove stage directions and markers
+    clean = re.sub(r'\[.*?\]', '', script).replace("[PAUSE]", " ... ").strip()
+    clean = re.sub(r'\n{3,}', '\n\n', clean)
+    clean = re.sub(r'\*+', '', clean)  # Remove markdown bold
 
-    # Try ElevenLabs first
-    if config.ELEVENLABS_API_KEY:
-        print("  🎤 Trying ElevenLabs (human voice)...")
-        if generate_voiceover_elevenlabs(clean, audio_path):
-            print(f"✅ ElevenLabs {label} done!")
-            return audio_path
-        else:
-            print("  ⚠️ ElevenLabs failed, falling back to gTTS")
+    # edge-tts handles long text fine — no chunking needed normally
+    # But chunk at ~3000 chars for reliability
+    max_chars = 3000
+    chunks = []
+    remaining = clean
+    while len(remaining) > max_chars:
+        cut = remaining.rfind('. ', 0, max_chars)
+        if cut == -1: cut = max_chars
+        chunks.append(remaining[:cut + 1])
+        remaining = remaining[cut + 1:].strip()
+    if remaining:
+        chunks.append(remaining)
 
-    generate_voiceover_gtts(clean, audio_path)
-    print(f"✅ gTTS {label} done!")
+    chunk_paths = []
+    for i, chunk in enumerate(chunks):
+        p = os.path.join(config.OUTPUT_FOLDER, f"edge_chunk_{i}.mp3")
+        try:
+            asyncio.run(_edge_tts_chunk(chunk, config.TTS_VOICE, p))
+            chunk_paths.append(p)
+            print(f"  🎙️ Chunk {i+1}/{len(chunks)} done")
+        except Exception as e:
+            print(f"  ⚠️ edge-tts chunk {i} failed: {e}")
+            # Fallback: write silence for this chunk
+            silent = AudioClip(lambda t: 0, duration=5)
+            silent.write_audiofile(p, fps=44100, logger=None)
+            chunk_paths.append(p)
+
+    if len(chunk_paths) == 1:
+        shutil.copy(chunk_paths[0], audio_path)
+    else:
+        clips = [AudioFileClip(p) for p in chunk_paths]
+        merged = concatenate_audioclips(clips)
+        merged.write_audiofile(audio_path, fps=44100, logger=None)
+        for c in clips: c.close()
+
+    for p in chunk_paths:
+        try: os.remove(p)
+        except: pass
+
+    print(f"✅ Voiceover done! ({label})")
     return audio_path
+
+
+# ============================================
+# STEP 6b — BACKGROUND MUSIC (Free dark ambient)
+# Downloaded from free CC0 sources at runtime
+# ============================================
+
+# Free dark ambient / cinematic tracks (CC0 / Public Domain)
+FREE_MUSIC_URLS = [
+    # Pixabay free music (no attribution required)
+    "https://cdn.pixabay.com/download/audio/2022/10/25/audio_946f0a5c40.mp3",  # Dark cinematic
+    "https://cdn.pixabay.com/download/audio/2022/08/23/audio_d16737dc28.mp3",  # Mystery ambient
+    "https://cdn.pixabay.com/download/audio/2021/11/25/audio_cb31e37bb1.mp3",  # Dark thriller
+    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb749dbac.mp3",  # Crime suspense
+]
+
+def fetch_background_music():
+    """Download a random free dark ambient track"""
+    print("\n🎵 Fetching free background music...")
+    music_path = os.path.join(config.OUTPUT_FOLDER, "bgmusic.mp3")
+
+    # Check cache first
+    if os.path.exists(music_path) and os.path.getsize(music_path) > 50000:
+        print("  ✅ Using cached music track")
+        return music_path
+
+    random.shuffle(FREE_MUSIC_URLS)
+    for url in FREE_MUSIC_URLS:
+        try:
+            r = requests.get(url, timeout=20, stream=True)
+            if r.status_code == 200:
+                with open(music_path, "wb") as f:
+                    for chunk in r.iter_content(8192): f.write(chunk)
+                if os.path.getsize(music_path) > 50000:
+                    print("  ✅ Background music downloaded!")
+                    return music_path
+        except Exception as e:
+            print(f"  ⚠️ Music fetch failed: {e}")
+            continue
+
+    print("  ⚠️ No background music — continuing without it")
+    return None
+
+
+def mix_audio_with_music(voice_path, music_path, output_path):
+    """Mix narration voice with quiet background music"""
+    if not music_path or not os.path.exists(music_path):
+        return voice_path  # Return original if no music
+
+    try:
+        voice = AudioFileClip(voice_path)
+        music = AudioFileClip(music_path)
+
+        # Loop music if shorter than voice
+        if music.duration < voice.duration:
+            loops = int(math.ceil(voice.duration / music.duration)) + 1
+            music = concatenate_audioclips([music] * loops)
+
+        music = music.subclip(0, voice.duration)
+
+        # Fade in / out on music
+        music = music.audio_fadein(3).audio_fadeout(5)
+
+        # Music at 12% volume — barely audible, just atmosphere
+        music = music.volumex(0.12)
+
+        # Mix
+        final_audio = CompositeAudioClip([voice, music])
+        final_audio.write_audiofile(output_path, fps=44100, logger=None)
+        voice.close()
+        music.close()
+        print("  ✅ Audio mixed with background music!")
+        return output_path
+    except Exception as e:
+        print(f"  ⚠️ Audio mix failed: {e} — using voice only")
+        return voice_path
 
 
 # ============================================
@@ -1093,11 +1168,16 @@ def run_pipeline():
         image_paths  = fetch_images(img_queries, target=18)
         video_clips  = fetch_videos(vid_queries, target=10)
 
-        # 4. Voiceovers
+        # 4. Voiceovers (edge-tts — free Microsoft Neural voice)
         audio_path        = generate_voiceover(script, label="voiceover")
         shorts_audio_path = None
         if shorts_script:
             shorts_audio_path = generate_voiceover(shorts_script, label="shorts_voiceover")
+
+        # 4b. Background music (free CC0 tracks)
+        music_path = fetch_background_music()
+        mixed_audio_path = os.path.join(config.OUTPUT_FOLDER, "voiceover_mixed.mp3")
+        audio_path = mix_audio_with_music(audio_path, music_path, mixed_audio_path)
 
         # 5. Thumbnail
         thumbnail_path = create_thumbnail(image_paths, metadata, story)
@@ -1133,7 +1213,7 @@ def run_pipeline():
             print(f"📱 Short: https://youtube.com/watch?v={shorts_id}")
         print(f"📊 Title  : {metadata.get('title')}")
         print(f"🎭 Style  : Thumbnail style {metadata.get('thumbnail_style', '1')}")
-        print(f"🎤 Voice  : {'ElevenLabs' if config.ELEVENLABS_API_KEY else 'gTTS'}")
+        print(f"🎤 Voice  : edge-tts ({config.TTS_VOICE})")
         print("=" * 55)
 
     except Exception as e:
