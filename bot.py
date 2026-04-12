@@ -805,18 +805,14 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     clips.append(create_chapter_card("🔴 Subscribe for Daily Mysteries", duration=outro_dur))
 
     print(f"  🔗 Joining {len(clips)} clips...")
+    # "compose" is safe now that every clip has .size set explicitly.
+    # Do NOT free clips before write_videofile — concatenate is lazy and
+    # holds live references into the clips list until rendering is done.
     try:
-        video = concatenate_videoclips(clips, method="chain")
-    except Exception as e:
-        print(f"  ⚠️ chain failed: {e}, trying compose...")
         video = concatenate_videoclips(clips, method="compose")
-
-    # Free clip RAM immediately after concat
-    for _c in clips:
-        try: _c.close()
-        except: pass
-    clips.clear()
-    gc.collect()
+    except Exception as e:
+        print(f"  ⚠️ compose failed: {e}, trying chain...")
+        video = concatenate_videoclips(clips, method="chain")
 
     if video.duration > total_dur + 0.5:
         video = video.subclip(0, total_dur)
@@ -841,6 +837,11 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     # threads=2: leave headroom so the runner OS isn't starved
     final.write_videofile(out, fps=config.VIDEO_FPS, codec="libx264", audio_codec="aac",
                           threads=2, preset="ultrafast", bitrate=config.VIDEO_BITRATE, logger=None)
+    # Safe to free everything NOW — write_videofile has fully rendered all frames
+    for _c in clips:
+        try: _c.close()
+        except: pass
+    clips.clear()
     try: video.close(); wm.close(); final.close(); audio.close()
     except: pass
     gc.collect()
