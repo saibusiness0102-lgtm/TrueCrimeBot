@@ -207,4 +207,4 @@ SUPPORTED_LANGUAGES = {
 # Primary upload language (always English first)
 PRIMARY_LANGUAGE = "en"
 # Optional: produce multi-language versions (set to [] to disable)
-EXTRA_LANGUAGES  = []   # e.g. ["es", "hi"] — each produces a separate upload
+EXTRA_LANGUAGES  = [es,hi,ja,de,fr,pt]   # e.g. ["es", "hi"] — each produces a separate upload
