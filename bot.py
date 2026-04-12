@@ -1054,134 +1054,235 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
 # STEP 11 — THUMBNAIL (4 Styles, A/B Testing)
 # ============================================
 
+def _wrap_text(draw, text, font, max_width):
+    """Word-wrap text to fit within max_width pixels. Returns list of lines."""
+    words  = text.split()
+    lines  = []
+    line   = ""
+    for word in words:
+        test = (line + " " + word).strip()
+        w    = draw.textbbox((0, 0), test, font=font)[2]
+        if w <= max_width:
+            line = test
+        else:
+            if line:
+                lines.append(line)
+            line = word
+    if line:
+        lines.append(line)
+    return lines or [text]
+
+def _draw_text_shadow(draw, x, y, text, font, fill, shadow=(0,0,0), depth=4):
+    """Draw text with a solid drop shadow."""
+    for dx in range(-depth, depth+1, depth):
+        for dy in range(-depth, depth+1, depth):
+            if dx or dy:
+                draw.text((x+dx, y+dy), text, font=font, fill=shadow)
+    draw.text((x, y), text, font=font, fill=fill)
+
+def _best_bg_image(image_paths):
+    """Pick a background image that isn't too dark or too uniform."""
+    import random
+    candidates = image_paths[:6] if len(image_paths) >= 6 else image_paths
+    best, best_score = candidates[0], -1
+    for p in candidates:
+        try:
+            arr = np.array(Image.open(p).convert("RGB").resize((160, 90)))
+            brightness = arr.mean()
+            std        = arr.std()
+            score      = std * 0.6 + min(brightness, 120) * 0.4
+            if score > best_score:
+                best, best_score = p, score
+        except:
+            pass
+    return best
+
 def create_thumbnail(image_paths, metadata, story):
     print("\n🖼️  Step 11: Creating thumbnail...")
-    W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT
+    W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT   # 1280 x 720
     thumb = os.path.join(config.OUTPUT_FOLDER, "thumbnail.jpg")
 
-    style      = metadata.get("thumbnail_style","1").strip()
-    thumb_text = metadata.get("thumbnail_text","SHOCKING CASE").upper()
-    title_text = story["title"][:45] + ("..." if len(story["title"]) > 45 else "")
+    style      = str(metadata.get("thumbnail_style", "1")).strip()
+    thumb_text = metadata.get("thumbnail_text", "SHOCKING CASE").upper()
+    # Shorten thumb_text if too long
+    if len(thumb_text) > 28:
+        thumb_text = thumb_text[:25].rsplit(" ", 1)[0] + "..."
 
+    # Full title for bottom bar — wrapped if needed
+    raw_title  = story["title"]
+
+    # ── Fonts ────────────────────────────────────────────────────────────────
+    FONT_PATH_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+    FONT_PATH_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     try:
-        f_xl  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 96)
-        f_lg  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 58)
-        f_md  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 40)
-        f_sm  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
+        # Scale headline size based on word count
+        word_count = len(thumb_text.split())
+        hl_size    = 108 if word_count <= 2 else (88 if word_count <= 4 else 72)
+        f_hl  = ImageFont.truetype(FONT_PATH_BOLD, hl_size)    # headline
+        f_lg  = ImageFont.truetype(FONT_PATH_BOLD, 52)
+        f_md  = ImageFont.truetype(FONT_PATH_BOLD, 36)
+        f_sm  = ImageFont.truetype(FONT_PATH_REG,  26)
+        f_tag = ImageFont.truetype(FONT_PATH_BOLD, 22)
     except:
-        f_xl = f_lg = f_md = f_sm = ImageFont.load_default()
+        f_hl = f_lg = f_md = f_sm = f_tag = ImageFont.load_default()
 
-    base_img = Image.new("RGB",(W,H),(8,0,0))
-    if image_paths:
+    # ── Background ────────────────────────────────────────────────────────────
+    bg_path  = _best_bg_image(image_paths) if image_paths else None
+    base_img = Image.new("RGB", (W, H), (10, 0, 0))
+    if bg_path:
         try:
-            base_img = Image.open(image_paths[0]).convert("RGB").resize((W,H), Image.LANCZOS)
+            base_img = Image.open(bg_path).convert("RGB").resize((W, H), Image.LANCZOS)
         except:
             pass
 
-    if style == "2":
-        # Red split — great for murders/killers
-        left  = base_img.crop((0,0,W//2,H))
-        right = base_img.crop((W//2,0,W,H))
-        left  = ImageEnhance.Brightness(left).enhance(0.30)
-        left  = ImageEnhance.Color(left).enhance(0.35)
-        right = ImageEnhance.Brightness(right).enhance(0.20)
-        right = ImageEnhance.Color(right).enhance(0.28)
-        red_tint = Image.new("RGBA",(W//2,H),(150,0,0,110))
-        left_rgba = Image.alpha_composite(left.convert("RGBA"), red_tint)
-        img = Image.new("RGB",(W,H))
-        img.paste(left_rgba.convert("RGB"),(0,0))
-        img.paste(right,(W//2,0))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(W//2-5,0),(W//2+5,H)], fill=(230,0,0))
-        draw.text((20,18), f"🔴 {config.CHANNEL_NAME.upper()}", font=f_sm, fill=(220,220,220))
-        words = thumb_text.split()
-        lines = [" ".join(words[:len(words)//2]), " ".join(words[len(words)//2:])] if len(words)>2 else [thumb_text]
-        y = H//2 - len(lines)*100//2
+    # ── Helper: draw wrapped headline centred in a zone ───────────────────────
+    def draw_headline(draw, text, font, zone_y, zone_h, fill=(255,255,255), max_w=None):
+        max_w  = max_w or W - 60
+        lines  = _wrap_text(draw, text, font, max_w)
+        lh     = draw.textbbox((0,0), "Ag", font=font)[3] + 8
+        total  = lh * len(lines)
+        y      = zone_y + (zone_h - total) // 2
         for line in lines:
-            b = draw.textbbox((0,0),line,font=f_xl)
-            x = (W//2-(b[2]-b[0]))//2
-            for s in range(6,0,-1): draw.text((x+s,y+s),line,font=f_xl,fill=(0,0,0))
-            draw.text((x,y),line,font=f_xl,fill=(255,255,255))
-            y += 104
-        b = draw.textbbox((0,0),title_text,font=f_md)
-        draw.text((W//2+(W//2-(b[2]-b[0]))//2, H//2-22),title_text,font=f_md,fill=(255,220,0))
+            lw = draw.textbbox((0,0), line, font=font)[2]
+            x  = (W - lw) // 2
+            _draw_text_shadow(draw, x, y, line, font, fill=fill)
+            y += lh
+        return y   # bottom of last line
 
+    # ── Helper: bottom title bar ──────────────────────────────────────────────
+    def draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0)):
+        draw.rectangle([(0, H-72), (W, H)], fill=bar_color)
+        draw.rectangle([(0, H-74), (W, H-72)], fill=accent)   # accent strip
+        title_lines = _wrap_text(draw, raw_title, f_md, W - 60)
+        line = title_lines[0][:55] + ("..." if len(title_lines[0]) > 55 else "")
+        lw   = draw.textbbox((0,0), line, font=f_md)[2]
+        draw.text(((W-lw)//2, H-62), line, font=f_md, fill=(240,240,240))
+
+    # ── Helper: channel badge top-left ─────────────────────────────────────────
+    def draw_badge(draw, bg=(180,0,0), fg=(255,255,255)):
+        label = config.CHANNEL_NAME.upper()
+        lw    = draw.textbbox((0,0), label, font=f_tag)[2]
+        pad   = 12
+        draw.rounded_rectangle([(18,14),(lw+pad*2+18, 46)], radius=4, fill=bg)
+        draw.text((18+pad, 18), label, font=f_tag, fill=fg)
+
+    # ════════════════════════════════════════════════════════════════════
+    # STYLE 1 — Classic: dark cinematic, white glow headline, red badge
+    # Best for: any case. Safe default.
+    # ════════════════════════════════════════════════════════════════════
+    if style == "1":
+        img = ImageEnhance.Brightness(base_img).enhance(0.28)
+        img = ImageEnhance.Color(img).enhance(0.5)
+        img = ImageEnhance.Contrast(img).enhance(1.3)
+        # Gradient overlay — darker at top, lighter in middle
+        grad = Image.new("RGBA", (W, H), (0,0,0,0))
+        gd   = ImageDraw.Draw(grad)
+        for y in range(H):
+            alpha = int(160 - 120 * abs(y/H - 0.5))
+            gd.line([(0,y),(W,y)], fill=(0,0,0,alpha))
+        img = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        draw_badge(draw)
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140,
+                      fill=(255,255,255))
+        draw_bottom_bar(draw)
+
+    # ════════════════════════════════════════════════════════════════════
+    # STYLE 2 — Red Split: left dark/red tint | right dark image
+    # Best for: murders, killers
+    # ════════════════════════════════════════════════════════════════════
+    elif style == "2":
+        left  = base_img.crop((0, 0, W//2, H))
+        right = base_img.crop((W//2, 0, W, H))
+        left  = ImageEnhance.Brightness(left).enhance(0.22)
+        left  = ImageEnhance.Color(left).enhance(0.2)
+        right = ImageEnhance.Brightness(right).enhance(0.30)
+        right = ImageEnhance.Color(right).enhance(0.45)
+        # Red tint on left
+        tint     = Image.new("RGBA", (W//2, H), (160,0,0,130))
+        left_img = Image.alpha_composite(left.convert("RGBA"), tint).convert("RGB")
+        img      = Image.new("RGB", (W, H))
+        img.paste(left_img, (0, 0))
+        img.paste(right, (W//2, 0))
+        draw = ImageDraw.Draw(img)
+        # Divider
+        draw.rectangle([(W//2-4, 0), (W//2+4, H)], fill=(230,0,0))
+        draw_badge(draw)
+        # Headline on left half
+        draw_headline(draw, thumb_text, f_hl,
+                      zone_y=60, zone_h=H-140, max_w=W//2-40,
+                      fill=(255,255,255))
+        # Sub-title on right half
+        sub_lines = _wrap_text(draw, raw_title, f_md, W//2-40)
+        sy = H//2 - 30
+        for line in sub_lines[:2]:
+            lw = draw.textbbox((0,0), line, font=f_md)[2]
+            x  = W//2 + (W//2 - lw)//2
+            _draw_text_shadow(draw, x, sy, line, f_md, fill=(255,220,0))
+            sy += 46
+        draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0))
+
+    # ════════════════════════════════════════════════════════════════════
+    # STYLE 3 — Dark Vignette: deep dark, red glowing text
+    # Best for: unsolved, conspiracy, cold case
+    # ════════════════════════════════════════════════════════════════════
     elif style == "3":
-        # Dark vignette + red text — for unsolved/conspiracy
-        img = ImageEnhance.Brightness(base_img).enhance(0.18)
-        img = ImageEnhance.Color(img).enhance(0.28)
-        img = img.filter(ImageFilter.GaussianBlur(radius=1.5))
-        vignette = Image.new("RGBA",(W,H),(0,0,0,0))
-        vd = ImageDraw.Draw(vignette)
-        for i in range(280):
-            alpha = int(i*0.78)
-            vd.rectangle([(i,i),(W-i,H-i)], outline=(0,0,0,alpha))
-        img = Image.alpha_composite(img.convert("RGBA"), vignette).convert("RGB")
+        img  = ImageEnhance.Brightness(base_img).enhance(0.15)
+        img  = ImageEnhance.Color(img).enhance(0.2)
+        img  = img.filter(ImageFilter.GaussianBlur(radius=2))
+        # Heavy vignette
+        vig  = Image.new("RGBA", (W, H), (0,0,0,0))
+        vd   = ImageDraw.Draw(vig)
+        for i in range(0, 350, 2):
+            a = min(int(i * 0.65), 255)
+            vd.rectangle([(i,i),(W-i,H-i)], outline=(0,0,0,a))
+        img  = Image.alpha_composite(img.convert("RGBA"), vig).convert("RGB")
         draw = ImageDraw.Draw(img)
-        draw.text((20,18), f"🔴 {config.CHANNEL_NAME.upper()}", font=f_sm, fill=(180,180,180))
-        words = thumb_text.split()
-        lines = ([thumb_text] if len(words)<=2 else [" ".join(words[:len(words)//2])," ".join(words[len(words)//2:])])
-        y = H//2-140
-        for line in lines:
-            b = draw.textbbox((0,0),line,font=f_xl)
-            x = (W-(b[2]-b[0]))//2
-            for r in range(10,0,-3): draw.text((x,y),line,font=f_xl,fill=(180,0,0,30))
-            for s in range(5,0,-1): draw.text((x+s,y+s),line,font=f_xl,fill=(0,0,0))
-            draw.text((x,y),line,font=f_xl,fill=(255,50,50))
-            y += 108
-        draw.rectangle([(0,H-88),(W,H)], fill=(180,0,0))
-        b = draw.textbbox((0,0),title_text,font=f_md)
-        draw.text(((W-(b[2]-b[0]))//2, H-68),title_text,font=f_md,fill=(255,255,255))
+        draw_badge(draw, bg=(120,0,0))
+        # Red glowing headline
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140,
+                      fill=(255,40,40), shadow=(80,0,0))
+        draw_bottom_bar(draw, bar_color=(15,0,0), accent=(160,0,0))
 
-    elif style == "4":
-        # Yellow warning style — high contrast, attention-grabbing
-        img = ImageEnhance.Brightness(base_img).enhance(0.22)
-        img = ImageEnhance.Color(img).enhance(0.3)
-        draw = ImageDraw.Draw(img)
-        # Top yellow bar
-        draw.rectangle([(0,0),(W,70)], fill=(230,180,0))
-        draw.text((20,18), f"⚠️  {config.CHANNEL_NAME.upper()} — DARK CASE", font=f_sm, fill=(0,0,0))
-        # Big white text center
-        words = thumb_text.split()
-        lines = ([thumb_text] if len(words)<=2 else [" ".join(words[:len(words)//2])," ".join(words[len(words)//2:])])
-        y = H//2-140
-        for line in lines:
-            b = draw.textbbox((0,0),line,font=f_xl)
-            x = (W-(b[2]-b[0]))//2
-            for s in range(8,0,-1): draw.text((x+s,y+s),line,font=f_xl,fill=(0,0,0))
-            draw.text((x,y),line,font=f_xl,fill=(255,255,255))
-            y += 108
-        draw.text(((W-draw.textbbox((0,0),title_text,font=f_lg)[2])//2, y+10), title_text, font=f_lg, fill=(230,180,0))
-        draw.rectangle([(0,H-62),(W,H)], fill=(20,0,0))
-        draw.text((24,H-46),"TRUE CRIME  •  UNSOLVED  •  DARK CASES", font=f_sm, fill=(155,155,155))
-
+    # ════════════════════════════════════════════════════════════════════
+    # STYLE 4 — Warning Banner: high contrast, yellow accents
+    # Best for: shocking reveals, unexpected perpetrators
+    # ════════════════════════════════════════════════════════════════════
     else:
-        # STYLE 1: Classic dark with red outline glow
-        img = ImageEnhance.Brightness(base_img).enhance(0.24)
-        img = ImageEnhance.Color(img).enhance(0.45)
+        img  = ImageEnhance.Brightness(base_img).enhance(0.25)
+        img  = ImageEnhance.Color(img).enhance(0.35)
+        # Dark gradient
+        grad = Image.new("RGBA", (W, H), (0,0,0,0))
+        gd   = ImageDraw.Draw(grad)
+        for y in range(H):
+            alpha = int(180 * (1 - y/H * 0.4))
+            gd.line([(0,y),(W,y)], fill=(0,0,0,alpha))
+        img  = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
         draw = ImageDraw.Draw(img)
-        draw.text((28,18), f"🔴 {config.CHANNEL_NAME.upper()}", font=f_sm, fill=(210,210,210))
-        words = thumb_text.split()
-        lines = ([thumb_text] if len(words)<=2 else [" ".join(words[:len(words)//2])," ".join(words[len(words)//2:])])
-        y = H//2-len(lines)*110//2-10
-        for line in lines:
-            b = draw.textbbox((0,0),line,font=f_xl)
-            x = (W-(b[2]-b[0]))//2
-            for s in range(8,0,-1): draw.text((x+s,y+s),line,font=f_xl,fill=(0,0,0))
-            for dx,dy in [(-2,0),(2,0),(0,-2),(0,2)]: draw.text((x+dx,y+dy),line,font=f_xl,fill=(215,0,0))
-            draw.text((x,y),line,font=f_xl,fill=(255,255,255))
-            y += 112
-        b = draw.textbbox((0,0),title_text,font=f_lg)
-        draw.text(((W-(b[2]-b[0]))//2, y+10), title_text, font=f_lg, fill=(230,185,0))
-        draw.rectangle([(0,H-62),(W,H)], fill=(12,0,0))
-        draw.rectangle([(0,H-64),(W,H-62)], fill=(200,0,0))
-        draw.text((28,H-48),"TRUE CRIME  •  UNSOLVED MYSTERIES  •  DARK CASES", font=f_sm, fill=(155,155,155))
+        # Yellow top warning bar
+        draw.rectangle([(0,0),(W,64)], fill=(220,170,0))
+        warn = "TRUE CRIME  //  " + config.CHANNEL_NAME.upper() + "  //  DARK CASE"
+        ww   = draw.textbbox((0,0), warn, font=f_sm)[2]
+        draw.text(((W-ww)//2, 18), warn, font=f_sm, fill=(0,0,0))
+        # White headline
+        draw_headline(draw, thumb_text, f_hl, zone_y=70, zone_h=H-160,
+                      fill=(255,255,255))
+        # Yellow sub-title
+        sub_lines = _wrap_text(draw, raw_title, f_lg, W-80)
+        sy = H - 130
+        for line in sub_lines[:1]:
+            lw = draw.textbbox((0,0), line, font=f_lg)[2]
+            _draw_text_shadow(draw, (W-lw)//2, sy, line, f_lg, fill=(255,210,0))
+        draw.rectangle([(0,H-60),(W,H)], fill=(10,0,0))
+        draw.rectangle([(0,H-62),(W,H-60)], fill=(220,170,0))
+        draw.text((24,H-48), "UNSOLVED  *  TRUE CRIME  *  DARK MYSTERIES", font=f_tag, fill=(130,130,130))
 
-    img.save(thumb, "JPEG", quality=96)
-    print(f"✅ Thumbnail created! (Style {style})")
+    # ── Save ─────────────────────────────────────────────────────────────────
+    # PIL save handles JPEG encoding; quality=95 keeps file under 2MB (YT limit)
+    img.save(thumb, "JPEG", quality=95, optimize=True)
+    size_kb = os.path.getsize(thumb) // 1024
+    print(f"✅ Thumbnail created! Style {style} | {W}x{H} | {size_kb}KB")
     return thumb
-
-
 # ============================================
 # STEP 12 — UPLOAD TO YOUTUBE
 # ============================================
@@ -1228,12 +1329,21 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
     print(f"✅ {kind} uploaded! ID: {vid}")
 
     if not is_short and thumbnail_path and os.path.exists(thumbnail_path):
+        size_kb = os.path.getsize(thumbnail_path) // 1024
+        print(f"  📸 Uploading thumbnail ({size_kb}KB)...")
         try:
-            yt.thumbnails().set(videoId=vid,
-                media_body=MediaFileUpload(thumbnail_path,mimetype="image/jpeg")).execute()
+            yt.thumbnails().set(
+                videoId=vid,
+                media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
+            ).execute()
             print("✅ Thumbnail uploaded!")
         except Exception as e:
-            print(f"⚠️ Thumbnail: {e}")
+            import traceback
+            print(f"❌ Thumbnail upload FAILED: {e}")
+            print("   Full error:")
+            traceback.print_exc()
+            print("   FIX: Go to https://www.youtube.com/verify and verify your channel.")
+            print("   YouTube requires phone verification to set custom thumbnails.")
 
     if not is_short:
         # Pinned comment with engagement question
