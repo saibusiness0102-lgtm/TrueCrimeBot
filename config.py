@@ -1,15 +1,102 @@
-# ============================================
-# ARCHIVE OF ENIGMAS - CONFIG v6
-# 100% FREE — No paid services
-# ============================================
+Skip to content
+saibusiness0102-lgtm
+TrueCrimeBot
+Repository navigation
+Code
+Issues
+Pull requests
+Actions
+Projects
+Security and quality
+Insights
+Settings
+Files
+Go to file
+t
+.github
+README.md
+bot.py
+config.py
+requirements.txt
+TrueCrimeBot
+/
+config.py
+in
+main
 
-import os
+Edit
 
-# ============================================
-# API KEYS — set as GitHub Secrets
-# ============================================
+Preview
+Indent mode
 
-GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
+Spaces
+Indent size
+
+4
+Line wrap mode
+
+No wrap
+Editing config.py file contents
+ 13
+ 14
+ 15
+ 16
+ 17
+ 18
+ 19
+ 20
+ 21
+ 22
+ 23
+ 24
+ 25
+ 26
+ 27
+ 28
+ 29
+ 30
+ 31
+ 32
+ 33
+ 34
+ 35
+ 36
+ 37
+ 38
+ 39
+ 40
+ 41
+ 42
+ 43
+ 44
+ 45
+ 46
+ 47
+ 48
+ 49
+ 50
+ 51
+ 52
+ 53
+ 54
+ 55
+ 56
+ 57
+ 58
+ 59
+ 60
+ 61
+ 62
+ 63
+ 64
+ 65
+ 66
+ 67
+ 68
+ 69
+ 70
+ 71
+# ============================================
 GROQ_MODEL     = "llama-3.3-70b-versatile"
 
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
@@ -68,3 +155,6 @@ NICHE_HASHTAGS = {
     "conspiracy": ["#ConspiracyTheory", "#DarkSecrets", "#HiddenTruth"],
     "default":    ["#CrimePodcast", "#TrueEvents", "#RealCrime"]
 }
+
+Use Control + Shift + m to toggle the tab key moving focus. Alternatively, use esc then tab to move to the next interactive element on the page.
+.github/workflows content loaded
