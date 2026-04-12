@@ -58,6 +58,20 @@ def update_history(title, topic_type, keywords):
     h["recent_keywords"] = (keywords + h["recent_keywords"])[:30]
     save_history(h)
 
+# Core crime nouns — if ANY of these overlap between titles we block it
+_CRIME_NOUNS = {
+    "vanish","vanishes","vanished","missing","disappear","disappeared",
+    "murder","murdered","killer","killed","killing","kill","dead","death",
+    "rape","raped","assault","assaulted","kidnap","kidnapped","abduct",
+    "found","body","hunt","case","mom","mother","father","dad","daughter",
+    "son","child","children","woman","man","girl","boy","teen","wife",
+    "husband","family","couple","sister","brother","baby","infant",
+}
+
+def _title_key_nouns(title):
+    """Return the set of crime-relevant words in a title (lowercase)."""
+    return {w.strip("'\".,!?") for w in title.lower().split()} & _CRIME_NOUNS
+
 def is_too_similar(title, topic_type):
     h = load_history()
     recent5 = h["recent_topics"][:5]
@@ -65,23 +79,36 @@ def is_too_similar(title, topic_type):
     if recent5.count(topic_type) >= max_same:
         print(f"  ⚠️  Topic '{topic_type}' appeared {recent5.count(topic_type)}x. Skipping.")
         return True
-    new_words = title.lower().split()[:4]
-    for old_title in h["recent_titles"][:10]:
-        if new_words == old_title.lower().split()[:4]:
-            print(f"  ⚠️  Too similar to: '{old_title}'. Skipping.")
+    new_nouns = _title_key_nouns(title)
+    for old_title in h["recent_titles"][:15]:
+        old_nouns = _title_key_nouns(old_title)
+        overlap   = new_nouns & old_nouns
+        # Block if 2+ key nouns overlap (e.g. "mom"+"vanish" = same story angle)
+        if len(overlap) >= 2:
+            print(f"  ⚠️  Too similar to: '{old_title}' (shared: {overlap}). Skipping.")
+            return True
+        # Also block exact first-3-word match
+        if title.lower().split()[:3] == old_title.lower().split()[:3]:
+            print(f"  ⚠️  Title starts identically to: '{old_title}'. Skipping.")
             return True
     return False
 
 def detect_topic_type(text):
     text = text.lower()
-    if any(w in text for w in ["missing","disappear","vanish"]): return "missing"
-    if any(w in text for w in ["serial","killer","spree"]):      return "serial"
-    if any(w in text for w in ["murder","homicide","kill"]):     return "murder"
-    if any(w in text for w in ["theft","heist","robbery"]):      return "heist"
-    if any(w in text for w in ["cult","sect","ritual"]):         return "cult"
-    if any(w in text for w in ["unsolved","mystery","unknown"]): return "unsolved"
-    if any(w in text for w in ["cold case","decades"]):          return "coldcase"
-    if any(w in text for w in ["conspiracy","cover","government"]): return "conspiracy"
+    # Order matters: more specific first
+    if any(w in text for w in ["serial","spree","multiple victim"]):    return "serial"
+    if any(w in text for w in ["rape","sexual assault","molest"]):       return "assault"
+    if any(w in text for w in ["caste","dalit","honor killing","dowry"]): return "caste"
+    if any(w in text for w in ["poison","poisoning","arsenic","cyanide"]): return "poison"
+    if any(w in text for w in ["fraud","scam","ponzi","embezzle","con"]): return "fraud"
+    if any(w in text for w in ["missing","disappear","vanish"]):         return "missing"
+    if any(w in text for w in ["murder","homicide","kill","stabbed","shot","strangled"]): return "murder"
+    if any(w in text for w in ["theft","heist","robbery","stolen","burglar"]): return "heist"
+    if any(w in text for w in ["cult","sect","ritual","sacrifice"]):     return "cult"
+    if any(w in text for w in ["unsolved","mystery","unknown","unidentified"]): return "unsolved"
+    if any(w in text for w in ["cold case","decades","reopened"]):       return "coldcase"
+    if any(w in text for w in ["conspiracy","cover","government","corrupt"]): return "conspiracy"
+    if any(w in text for w in ["kidnap","abduct","ransom","hostage"]):   return "kidnap"
     return "other"
 
 
@@ -91,11 +118,21 @@ def detect_topic_type(text):
 
 def fetch_from_rss():
     rss_feeds = [
+        # ── International true crime ─────────────────────
         "https://www.crimeonline.com/feed/",
         "https://www.oxygen.com/rss.xml",
         "https://www.investigationdiscovery.com/feed",
+        # ── General news — murders/fraud/assault reported ─
         "https://abcnews.go.com/US/feed",
-        "https://feeds.simplecast.com/xl36XBC2",
+        "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/Crime.xml",
+        "https://www.theguardian.com/uk/crime/rss",
+        # ── India / South Asia crimes ─────────────────────
+        "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms",
+        "https://feeds.feedburner.com/ndtvnews-india-news",
+        # ── Court / justice reporting ─────────────────────
+        "https://abcnews.go.com/Court/feed",
+        "https://lawandcrime.com/feed/",
     ]
     random.shuffle(rss_feeds)
     for feed_url in rss_feeds:
@@ -118,19 +155,59 @@ def fetch_from_wikipedia():
     h = load_history()
     used_keywords = set(h.get("recent_keywords", []))
     cases = [
-        "Zodiac Killer","Jack the Ripper","DB Cooper","Black Dahlia murder",
+        # ── ICONIC SERIAL KILLERS ─────────────────────────────────────────
+        "Zodiac Killer","Jack the Ripper","Golden State Killer","Ted Bundy",
+        "Jeffrey Dahmer","John Wayne Gacy","BTK killer","Gary Ridgway",
+        "Samuel Little","Ed Kemper","Richard Ramirez","Dean Corll",
+        "Andrei Chikatilo","Aileen Wuornos","Harold Shipman","H. H. Holmes",
+        "Charles Manson","Pedro Lopez","Luis Garavito","John Edward Robinson",
+        # ── MURDERS & HIGH-PROFILE CASES ─────────────────────────────────
+        "Black Dahlia murder","Villisca axe murders","Hinterkaifeck murders",
+        "Axeman of New Orleans","Cleveland torso murderer","Lizzie Borden",
+        "Chris Watts murders","JonBenet Ramsey","Tylenol murders",
+        "West Memphis Three","Delphi murders","OJ Simpson trial",
+        "Amanda Knox","Steven Avery","Scott Peterson case",
+        "Menendez brothers","Pamela Smart","Drew Peterson",
+        "Robert Durst","Phil Spector murder","Oscar Pistorius trial",
+        "Murder of Meredith Kercher","Yvonne Fletcher murder",
+        # ── CASTE / HONOUR / DOWRY CRIMES (India & South Asia) ───────────
+        "Khairlanji massacre","Nithari killings","Priyadarshini Mattoo case",
+        "Bhanwari Devi murder case","Jessica Lal murder case",
+        "Aarushi Talwar murder case","Sheena Bora murder case",
+        "Bijal Joshi rape case","Nirbhaya case","Unnao rape case",
+        "Kathua rape case","Hathras case","Budaun murders India",
+        "Rohtak honour killing India","Manoj Babli honour killing",
+        "Ilavarasan death case Tamil Nadu","Thangjam Manorama case",
+        # ── FRAUD / FINANCIAL CRIME ───────────────────────────────────────
+        "Bernie Madoff Ponzi scheme","Enron scandal","WorldCom fraud",
+        "Elizabeth Holmes Theranos","Anna Sorokin fraud","Frank Abagnale",
+        "Satyam scandal India","2G spectrum scam India","Harshad Mehta scam",
+        "Vijay Mallya fraud","Nirav Modi diamond fraud","Subrata Roy fraud",
+        # ── KIDNAPPING / ABDUCTION ────────────────────────────────────────
+        "Jaycee Dugard kidnapping","Elizabeth Smart kidnapping",
+        "Ariel Castro kidnappings","Natascha Kampusch kidnapping",
+        "Patty Hearst kidnapping","Lindbergh kidnapping",
+        "Getty kidnapping 1973","Frank Sinatra Jr kidnapping",
+        # ── POISONING CASES ───────────────────────────────────────────────
+        "Alexander Litvinenko poisoning","Salisbury Novichok attack",
+        "Georgi Markov assassination","Graham Young poisoner",
+        "Marie Besnard poison murders","Nannie Doss poisoner",
+        # ── CULTS / MASS EVENTS ───────────────────────────────────────────
+        "Jonestown massacre","Heaven's Gate cult","NXIVM cult",
+        "Aum Shinrikyo","Branch Davidians Waco","The Family cult Australia",
+        "Order of the Solar Temple","Rajneeshee bioterror attack",
+        # ── HEISTS / THEFT ────────────────────────────────────────────────
+        "DB Cooper","Isabella Stewart Gardner Museum theft",
+        "Great Train Robbery 1963","Antwerp diamond heist",
+        "Hatton Garden heist","Banco Central Brazil robbery",
+        "Dunbar Armored robbery","Lufthansa heist 1978",
+        # ── UNSOLVED / MYSTERIOUS ─────────────────────────────────────────
         "Tamam Shud case","Dyatlov Pass incident","Isdal Woman",
-        "Golden State Killer","Ted Bundy","Jeffrey Dahmer","John Wayne Gacy",
-        "Aileen Wuornos","BTK killer","Gary Ridgway","Samuel Little",
-        "Isabella Stewart Gardner Museum theft","Great Train Robbery 1963",
-        "Antwerp diamond heist","Jonestown massacre","Heaven's Gate cult",
-        "NXIVM cult","Aum Shinrikyo","Gabby Petito case","Delphi murders",
-        "Chris Watts murders","JonBenet Ramsey","Tylenol murders","West Memphis Three",
-        "Beaumont children disappearance","Villisca axe murders",
-        "Hinterkaifeck murders","Sodder children disappearance",
-        "Axeman of New Orleans","Cleveland torso murderer",
-        "Ed Kemper","Richard Ramirez","Dean Corll","Andrei Chikatilo",
-        "Lizzie Borden","OJ Simpson trial","Amanda Knox","Steven Avery",
+        "Beaumont children disappearance","Sodder children disappearance",
+        "Zodiac ciphers","D.B. Cooper","Marilyn Monroe death",
+        "Elisa Lam case","Max Headroom broadcast intrusion",
+        "Boy in the box Philadelphia","Babushka Lady assassination",
+        "Gabby Petito case","Delphi murders cold case",
     ]
     available = [c for c in cases if c.lower() not in used_keywords]
     if not available:
@@ -435,9 +512,18 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
     metadata.setdefault("community_post", f"We just dropped a new case. {story['title']}. Do you think justice was served? Comment your theory!")
 
     title_lower = story["title"].lower()
-    niche = config.NICHE_HASHTAGS.get("default", [])
-    for kw, tags in config.NICHE_HASHTAGS.items():
-        if kw in title_lower: niche = tags; break
+    topic_key   = story.get("topic", "other")
+    # Extra niche hashtags for new topic types not in config
+    _EXTRA_NICHE = {
+        "assault":  ["#CrimesAgainstWomen","#JusticeForVictims","#SexualAssaultAwareness"],
+        "caste":    ["#CasteViolence","#DalitRights","#HonourCrime","#JusticeInIndia"],
+        "poison":   ["#PoisoningCase","#TrueCrimePoison","#DarkMedicine"],
+        "fraud":    ["#WhiteCollarCrime","#FinancialFraud","#CorporateCrime"],
+        "kidnap":   ["#KidnappingCase","#AbductionStory","#FoundAlive"],
+    }
+    niche = (config.NICHE_HASHTAGS.get(topic_key) or
+             _EXTRA_NICHE.get(topic_key) or
+             config.NICHE_HASHTAGS.get("default", []))
 
     # Add trending hashtags
     trending = getattr(config, "TRENDING_HASHTAGS", [])
@@ -620,15 +706,19 @@ def mix_audio_with_music(voice_path, music_path, output_path):
 def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
     try:
         pil = Image.open(img_path).convert("RGB")
-        pil = ImageEnhance.Brightness(pil).enhance(0.70)
-        pil = ImageEnhance.Color(pil).enhance(0.62)
-        pil = ImageEnhance.Contrast(pil).enhance(1.20)
+        pil = ImageEnhance.Brightness(pil).enhance(0.78)
+        pil = ImageEnhance.Color(pil).enhance(0.80)
+        pil = ImageEnhance.Contrast(pil).enhance(1.15)
         scale = max(W * 1.35 / pil.width, H * 1.35 / pil.height)
         nw, nh = int(pil.width * scale), int(pil.height * scale)
         pil = pil.resize((nw, nh), Image.LANCZOS)
         arr = np.array(pil)
-    except:
-        arr = np.zeros((H, W, 3), dtype=np.uint8)
+    except Exception as _img_err:
+        print(f"  ⚠️ Image load failed ({_img_err}), using fallback frame")
+        # Dark crimson fallback — never pure black; keeps cinematic feel
+        fallback = np.zeros((H, W, 3), dtype=np.uint8)
+        fallback[:, :, 0] = 18   # slight red tint
+        arr = fallback
         nw, nh = W, H
 
     dirs = {
@@ -650,7 +740,12 @@ def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
         x2 = max(x1+1, min(int(sx2+(ex2-sx2)*p), nw))
         y2 = max(y1+1, min(int(sy2+(ey2-sy2)*p), nh))
         crop = arr[y1:y2, x1:x2]
-        if crop.size == 0: return np.zeros((H,W,3),dtype=np.uint8)
+        if crop.size == 0:
+            # Never return black — clamp coords and return full scaled array
+            x1, y1 = max(0, x1-1), max(0, y1-1)
+            x2, y2 = min(nw, x1+2), min(nh, y1+2)
+            crop = arr[y1:y2, x1:x2]
+            if crop.size == 0: crop = arr[:2, :2]
         return np.array(Image.fromarray(crop).resize((W,H),Image.LANCZOS))
 
     clip = VideoClip(make_frame, duration=duration)
@@ -680,7 +775,7 @@ def process_video_clip(vid_info, duration, W=1920, H=1080):
             clip = clip.crop(y1=yc - H//2, y2=yc + H//2)
         # Cinematic color grading
         clip = clip.fl_image(lambda frame:
-            np.clip(frame.astype(np.float32) * 0.55, 0, 255).astype(np.uint8))
+            np.clip(frame.astype(np.float32) * 0.72, 0, 255).astype(np.uint8))
         return clip
     except Exception as e:
         print(f"  ⚠️ Video process error: {e}")
