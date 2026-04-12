@@ -1,13 +1,15 @@
-name: Archive of Enigmas - Daily Upload
+name: Archive of Enigmas - Daily Upload v5
 
 on:
   schedule:
-    - cron: '30 12 * * *'  # 6:00 PM IST daily
-  workflow_dispatch:
+    - cron: '30 12 * * *'   # 6:00 PM IST — prime time upload
+    - cron: '30 3 * * *'    # 9:00 AM IST — morning upload (2 uploads/day)
+  workflow_dispatch:         # Manual trigger anytime
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -20,7 +22,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-liberation imagemagick
 
       - name: Fix ImageMagick policy
@@ -31,11 +33,29 @@ jobs:
         run: |
           pip install -r requirements.txt
 
+      # Restore upload history so the bot remembers what it already uploaded
+      - name: Restore upload history
+        uses: actions/cache@v4
+        with:
+          path: upload_history.json
+          key: upload-history-${{ github.run_id }}
+          restore-keys: |
+            upload-history-
+
       - name: Run Bot
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
           YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
         run: |
           python bot.py
+
+      # Save updated history so next run knows what was uploaded
+      - name: Save upload history
+        uses: actions/cache@v4
+        with:
+          path: upload_history.json
+          key: upload-history-${{ github.run_id }}
