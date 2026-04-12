@@ -369,11 +369,6 @@ WRITING RULES:
 - Sound like a gripping podcast host, NOT a Wikipedia article.
 - Include 2-3 moments that will make viewers COMMENT (controversy, surprise, injustice).
 
-Then write a SHORTS_SCRIPT (55 seconds, ~140 words):
----SHORTS_SCRIPT---
-(Most shocking single fact or moment. Hook in first 3 words — no intro.
-Fast, punchy sentences. End with question + "follow for daily mysteries".)
----END_SHORTS---
 
 Then:
 ---METADATA---
@@ -391,17 +386,25 @@ CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
     resp = client.chat.completions.create(
         model=config.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=6000, temperature=0.88)
+        max_tokens=8000, temperature=0.88)
 
     full = resp.choices[0].message.content
 
-    # Extract shorts script
-    shorts_script = ""
-    if "---SHORTS_SCRIPT---" in full and "---END_SHORTS---" in full:
-        s_start = full.index("---SHORTS_SCRIPT---") + len("---SHORTS_SCRIPT---")
-        s_end   = full.index("---END_SHORTS---")
-        shorts_script = full[s_start:s_end].strip()
-        full = full[:full.index("---SHORTS_SCRIPT---")] + full[full.index("---END_SHORTS---") + len("---END_SHORTS---"):]
+    # ── Separate Shorts call — never truncated by main script length ─────────
+    print("  📱 Generating Shorts script (separate call)...")
+    try:
+        shorts_resp = client.chat.completions.create(
+            model=config.GROQ_MODEL,
+            messages=[{"role": "user", "content":
+                f"""Write a YouTube Shorts script (55 seconds, exactly 130-150 words) \
+about this true crime case: {story['title']}\n\nContext: {story['content'][:800]}\n\nRULES:\n- Hook in the FIRST 3 WORDS — no intro, no "hey guys"\n- Fast punchy sentences. Maximum tension.\n- Include ONE shocking specific detail (date, name, number)\n- End with a question that makes viewers follow\n- Final line MUST be: "Follow for daily mysteries."\n- Write ONLY the spoken words, no stage directions."""
+            }],
+            max_tokens=400, temperature=0.85)
+        shorts_script = shorts_resp.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"  ⚠️ Shorts call failed: {e}")
+        shorts_script = ""
+    # ─────────────────────────────────────────────────────────────────────────
 
     # Extract metadata
     if "---METADATA---" in full:
@@ -1219,6 +1222,9 @@ def run_pipeline():
         print("\n"+"="*55)
         print("🎉 SUCCESS!")
         print(f"📺 Main:  https://youtube.com/watch?v={video_id}")
+        print(f"🎬 Studio: https://studio.youtube.com/video/{video_id}/edit")
+        print("⏳ NOTE: YouTube takes 30min–4hrs to process 1080p.")
+        print("   Check YouTube Studio → Content tab immediately.")
         if shorts_id:
             print(f"📱 Short: https://youtube.com/watch?v={shorts_id}")
         print(f"📊 Title : {metadata.get('title')}")
