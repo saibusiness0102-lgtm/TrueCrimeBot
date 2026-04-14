@@ -236,42 +236,223 @@ def fetch_story():
 # ============================================
 
 def extract_keywords(story):
+    """
+    Topic-specific image & video query pools.
+    Every topic has its own visual universe so no two videos look alike.
+    Pexels returns 3 results per query, so 24 images = 8 unique queries used.
+    We pass 30 queries so shuffle variety is high; fetch logic picks first 24.
+    """
     title   = story["title"].lower()
-    content = story["content"].lower()
+    content = (story.get("content","") or "").lower()
+    text    = title + " " + content
 
-    image_queries = [
-        "crime scene tape dark night","detective noir shadow investigation",
-        "old newspaper crime headline vintage","dark foggy forest mystery",
-        "fingerprint forensic evidence closeup","abandoned house dark night",
-        "silhouette dark figure mystery","courtroom justice vintage dark",
-        "wanted poster vintage crime","dark alley rain night cinematic",
-        "candlelight dark room mystery","old photograph vintage sepia dark",
-        "magnifying glass detective clue","police badge dark dramatic",
-        "prison bars dark shadow","forensic lab dark dramatic",
-        "detective board crime suspects","blood spatter dark investigation",
-        "crime map pins detective board","jail cell dramatic",
-        "dark cemetery tombstones fog","handcuffs dramatic arrest",
+    # ── Per-topic image pools (visually distinct from each other) ─────────────
+    TOPIC_IMAGES = {
+        "murder": [
+            "bloody crime scene investigation",
+            "forensic scientist evidence gloves",
+            "chalk outline floor crime",
+            "autopsy table dark dramatic",
+            "detective holding evidence bag",
+            "police tape house crime scene",
+            "court room judge gavel",
+            "victim memorial flowers candles",
+            "crime scene photo evidence board",
+            "prosecutor evidence courtroom dark",
+        ],
+        "missing": [
+            "missing person flyer post",
+            "search party flashlights forest night",
+            "empty swing set abandoned playground",
+            "milk carton missing child vintage",
+            "search rescue team dogs forest",
+            "abandoned child bedroom dark",
+            "candle vigil memorial night",
+            "family crying grief dark",
+            "detective studying map missing route",
+            "empty chair at table dark",
+        ],
+        "serial": [
+            "serial killer mugshot newspaper",
+            "detective crime board red string",
+            "prison corridor cell dramatic",
+            "victims memorial wall photographs",
+            "criminal profile document desk",
+            "FBI investigation files dark",
+            "courtroom packed dramatic verdict",
+            "dark silhouette figure stalking",
+            "phone call night dark window",
+            "evidence map pins locations crime",
+        ],
+        "heist": [
+            "vault door steel bank dramatic",
+            "gold bars stacks dramatic",
+            "masked robber dark dramatic",
+            "security camera footage grainy",
+            "money counting table dramatic",
+            "getaway car dramatic night",
+            "briefcase handcuff arrest",
+            "police chase night urban",
+            "stolen jewelry dramatic close",
+            "auction house valuable art dramatic",
+        ],
+        "cult": [
+            "candles ritual dark ceremony",
+            "abandoned cult compound building",
+            "robed figures ceremony dark forest",
+            "cult leader crowd podium dramatic",
+            "bible torn pages dark dramatic",
+            "isolated rural compound aerial",
+            "brainwashing propaganda poster vintage",
+            "survivor testimony courtroom dramatic",
+            "mass grave dark documentary",
+            "FBI raid compound dramatic",
+        ],
+        "unsolved": [
+            "cold case file folder dusty",
+            "unanswered questions chalkboard dark",
+            "detective staring wall evidence",
+            "old crime scene photo sepia",
+            "question mark shadow dark",
+            "file cabinet overflowing cases",
+            "mystery door locked dark",
+            "vintage newspaper headline unsolved",
+            "detective old evidence box",
+            "shadow figure foggy night vintage",
+        ],
+        "conspiracy": [
+            "classified document redacted black",
+            "surveillance camera network dark",
+            "government building night dramatic",
+            "conspiracy board newspaper clippings",
+            "shadowy figure silhouette dramatic",
+            "newspaper headline cover up dark",
+            "briefcase exchange dark alley",
+            "hacker computer screen dark",
+            "secret meeting dark room",
+            "wiretap phone surveillance dramatic",
+        ],
+        "coldcase": [
+            "dusty evidence box files cold case",
+            "old polaroid photo faded dark",
+            "detective reopening old case files",
+            "vintage crime scene photograph",
+            "decades old newspaper archive",
+            "retired detective case notes dark",
+            "forensic DNA lab modern dramatic",
+            "family seeking justice courtroom",
+            "cold storage evidence room dark",
+            "witness testimony years later dramatic",
+        ],
+    }
+
+    # ── Per-topic video pools ─────────────────────────────────────────────────
+    TOPIC_VIDEOS = {
+        "murder": [
+            "ambulance emergency lights night",
+            "police investigation crime scene",
+            "courtroom gavel dramatic close",
+            "prison sentence judge dramatic",
+            "forensic team working crime scene",
+            "detective interviewing witness",
+        ],
+        "missing": [
+            "search helicopter forest aerial",
+            "search party walking field night",
+            "missing poster blowing wind",
+            "empty road driving night dramatic",
+            "vigil candles crowd night",
+            "family reunion emotional dramatic",
+        ],
+        "serial": [
+            "police car convoy dramatic",
+            "prison transfer van dramatic",
+            "courtroom packed trial dramatic",
+            "detective profiling board dramatic",
+            "news reporter crime scene live",
+            "handcuffed perp walk dramatic",
+        ],
+        "heist": [
+            "bank vault door dramatic",
+            "police chase urban night",
+            "money counting dramatic",
+            "getaway car speeding night",
+            "police roadblock dramatic",
+            "news helicopter aerial dramatic",
+        ],
+        "cult": [
+            "forest dark night dramatic",
+            "crowd chanting dramatic",
+            "abandoned building interior dark",
+            "smoke fire ritual dramatic",
+            "documentary interview dramatic",
+            "police raid building dramatic",
+        ],
+        "default": [
+            "dark rainy city night",
+            "fog forest dark eerie",
+            "storm lightning dramatic dark",
+            "dark ocean waves night",
+            "fire dark night dramatic",
+            "dark road night driving",
+            "smoke dark atmospheric",
+            "rain window dark dramatic",
+            "dark alley night cinematic",
+            "thunder clouds dark dramatic",
+        ],
+    }
+
+    # ── Universal fallback images (visually varied) ───────────────────────────
+    UNIVERSAL_IMAGES = [
+        "dark dramatic cinematic shadows",
+        "vintage sepia photograph dark room",
+        "candlelight dark atmospheric room",
+        "old typewriter dark dramatic",
+        "magnifying glass clue mystery",
+        "shadow window rain night",
+        "dark cemetery fog night",
+        "old clock dramatic dark",
+        "newspaper archive reading dark",
+        "leather journal pen dark desk",
+        "radio vintage dark room dramatic",
+        "telephone vintage dramatic dark",
     ]
 
-    video_queries = [
-        "dark rainy city night","police car lights night",
-        "fog forest dark eerie","rain window dark night",
-        "storm lightning dramatic dark","dark ocean waves night",
-        "smoke dark dramatic","fire dark night dramatic",
-        "dark road night driving","prison gate dramatic",
-        "detective walking rain coat","court room gavel dramatic",
-    ]
+    # ── Detect topic ──────────────────────────────────────────────────────────
+    topic = story.get("topic", "other")
+    if topic == "other":
+        # Re-detect from text
+        if any(w in text for w in ["serial","spree"]): topic = "serial"
+        elif any(w in text for w in ["murder","kill","homicide"]): topic = "murder"
+        elif any(w in text for w in ["missing","disappear","vanish"]): topic = "missing"
+        elif any(w in text for w in ["heist","robbery","theft"]): topic = "heist"
+        elif any(w in text for w in ["cult","sect","ritual"]): topic = "cult"
+        elif any(w in text for w in ["conspiracy","cover","government"]): topic = "conspiracy"
+        elif any(w in text for w in ["cold case","decade","unsolved"]): topic = "coldcase"
 
-    if any(w in title + content for w in ["murder","kill","dead","homicide"]):
-        image_queries = ["crime scene investigation police","forensic dark dramatic","murder mystery detective noir"] + image_queries
-    if any(w in title + content for w in ["missing","disappear","vanish"]):
-        image_queries = ["missing person poster dark","search party flashlight","empty road dark night"] + image_queries
-    if any(w in title + content for w in ["serial","killer"]):
-        image_queries = ["detective board suspects investigation","prison dark corridor","shadow figure dark"] + image_queries
+    # ── Build final query lists ───────────────────────────────────────────────
+    topic_imgs = TOPIC_IMAGES.get(topic, TOPIC_IMAGES.get("unsolved", []))
+    topic_vids = TOPIC_VIDEOS.get(topic, TOPIC_VIDEOS["default"])
+
+    # Interleave topic-specific + universal so every run has variety
+    image_queries = []
+    for i, q in enumerate(topic_imgs):
+        image_queries.append(q)
+        if i < len(UNIVERSAL_IMAGES):
+            image_queries.append(UNIVERSAL_IMAGES[i])
+
+    video_queries = topic_vids + TOPIC_VIDEOS["default"]
 
     random.shuffle(image_queries)
     random.shuffle(video_queries)
-    return image_queries[:24], video_queries[:14]
+
+    # Deduplicate while preserving order
+    seen = set()
+    image_queries = [q for q in image_queries if not (q in seen or seen.add(q))]
+    video_queries = [q for q in video_queries if not (q in seen or seen.add(q))]
+
+    print(f"  🎨 Visual theme: '{topic}' ({len(image_queries)} img queries, {len(video_queries)} vid queries)")
+    return image_queries[:30], video_queries[:16]
 
 
 # ============================================
@@ -1330,20 +1511,35 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
 
     if not is_short and thumbnail_path and os.path.exists(thumbnail_path):
         size_kb = os.path.getsize(thumbnail_path) // 1024
-        print(f"  📸 Uploading thumbnail ({size_kb}KB)...")
-        try:
-            yt.thumbnails().set(
-                videoId=vid,
-                media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
-            ).execute()
-            print("✅ Thumbnail uploaded!")
-        except Exception as e:
-            import traceback
-            print(f"❌ Thumbnail upload FAILED: {e}")
-            print("   Full error:")
-            traceback.print_exc()
-            print("   FIX: Go to https://www.youtube.com/verify and verify your channel.")
-            print("   YouTube requires phone verification to set custom thumbnails.")
+        print(f"  📸 Uploading thumbnail ({size_kb}KB) for video {vid}...")
+        thumb_ok = False
+        for attempt in range(1, 4):   # 3 attempts with back-off
+            try:
+                import time as _time
+                yt.thumbnails().set(
+                    videoId=vid,
+                    media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg")
+                ).execute()
+                print(f"✅ Thumbnail uploaded! (attempt {attempt})")
+                thumb_ok = True
+                break
+            except Exception as e:
+                import traceback
+                err_str = str(e)
+                print(f"  ❌ Thumbnail attempt {attempt}/3 failed: {err_str[:120]}")
+                if "forbidden" in err_str.lower() or "403" in err_str or "insufficientPermissions" in err_str:
+                    print("  ⚠️  CHANNEL NOT VERIFIED — go to https://www.youtube.com/verify")
+                    print("     YouTube requires phone verification to upload custom thumbnails via API.")
+                    break   # No point retrying a permissions error
+                if attempt < 3:
+                    _time.sleep(5 * attempt)
+        if not thumb_ok:
+            # Save thumbnail locally so it can be manually uploaded
+            manual_path = os.path.join(config.OUTPUT_FOLDER, f"thumbnail_manual_{vid}.jpg")
+            import shutil as _sh
+            _sh.copy(thumbnail_path, manual_path)
+            print(f"  💾 Thumbnail saved for manual upload: {manual_path}")
+            print(f"     Upload manually: YouTube Studio → {vid} → Customise → Thumbnail")
 
     if not is_short:
         # Pinned comment with engagement question
