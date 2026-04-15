@@ -1,0 +1,57 @@
+name: Archive of Enigmas - Spanish (Daily)
+
+on:
+  schedule:
+    - cron: '30 14 * * *'   # 8:00 PM IST
+    - cron: '30 5 * * *'   # 11:00 AM IST
+  workflow_dispatch:
+
+jobs:
+  upload-es:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add 8 GB swap
+        run: |
+          SWAP=/mnt/swapfile-bot
+          if ! swapon --show | grep -q "$SWAP"; then
+            sudo dd if=/dev/zero of=$SWAP bs=1M count=8192 status=none
+            sudo chmod 600 $SWAP && sudo mkswap $SWAP -q && sudo swapon $SWAP
+          fi
+          free -h
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-liberation fonts-dejavu-core imagemagick --no-install-recommends
+          sudo sed -i 's/rights="none" pattern="@\*"/rights="read|write" pattern="@*"/' /etc/ImageMagick-6/policy.xml || true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: pip-
+
+      - run: pip install --upgrade pip -q && pip install -r requirements.txt -q
+
+      - name: Run Bot (Spanish)
+        env:
+          BOT_LANGUAGE:            "es"
+          GROQ_API_KEY:            ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY:          ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY:         ${{ secrets.PIXABAY_API_KEY }}
+          YOUTUBE_CLIENT_SECRETS:  ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+          YOUTUBE_TOKEN:           ${{ secrets.YOUTUBE_TOKEN }}
+          MALLOC_TRIM_THRESHOLD_:  "131072"
+          PYTHONUNBUFFERED:        "1"
+        run: nice -n 10 python bot.py
+
+      - name: Cleanup
+        if: always()
+        run: rm -rf output/images output/videos output/voiceover*.mp3 output/bgmusic.mp3 output/edge_chunk_*.mp3 || true
