@@ -1,6 +1,6 @@
 # ============================================================
-# ARCHIVE OF ENIGMAS — config.py  (v9 VIRAL EDITION)
-# Fixed + Fully Optimized for Growth, SEO & Global Reach
+# ARCHIVE OF ENIGMAS — config.py  (v10 MONETIZATION EDITION)
+# Top-5 language strategy for fastest path to YouTube monetisation
 # ============================================================
 
 import os
@@ -23,15 +23,9 @@ YOUTUBE_TOKEN          = os.environ.get("YOUTUBE_TOKEN", "")
 # ============================================================
 # VOICE — edge-tts (FREE Microsoft Neural, no API key needed)
 # ============================================================
-# Deep, authoritative voices for true crime atmosphere:
-#   en-US-ChristopherNeural  — deep, authoritative  ✅ primary
-#   en-GB-RyanNeural         — British, cinematic
-#   en-US-GuyNeural          — clear American narrator
-#   en-US-EricNeural         — warm, gripping
-#   en-IE-ConnorNeural       — Irish accent, distinctive
 
 TTS_VOICE  = "en-US-ChristopherNeural"
-TTS_RATE   = "-5%"    # Slightly slower = more dramatic
+TTS_RATE   = "-5%"
 TTS_VOLUME = "+0%"
 
 
@@ -41,8 +35,8 @@ TTS_VOLUME = "+0%"
 
 VIDEO_WIDTH   = 1920
 VIDEO_HEIGHT  = 1080
-VIDEO_FPS     = 24           # Cinematic feel (vs 30 which looks "TV")
-VIDEO_BITRATE = "8000k"      # High quality 1080p stream
+VIDEO_FPS     = 24
+VIDEO_BITRATE = "8000k"
 
 
 # ============================================================
@@ -51,7 +45,7 @@ VIDEO_BITRATE = "8000k"      # High quality 1080p stream
 
 THUMBNAIL_WIDTH  = 1280
 THUMBNAIL_HEIGHT = 720
-THUMBNAIL_STYLES = ["1", "2", "3", "4"]   # Rotating A/B test styles
+THUMBNAIL_STYLES = ["1", "2", "3", "4"]
 
 
 # ============================================================
@@ -78,7 +72,7 @@ SHORTS_TARGET_DURATION = 58   # Keep under 60s for YouTube Shorts boost
 # DIVERSITY GUARD
 # ============================================================
 
-MAX_SAME_TOPIC_IN_5 = 1   # Max times same topic type can appear in last 5 videos
+MAX_SAME_TOPIC_IN_5 = 1
 
 
 # ============================================================
@@ -86,13 +80,11 @@ MAX_SAME_TOPIC_IN_5 = 1   # Max times same topic type can appear in last 5 video
 # ============================================================
 
 BASE_HASHTAGS = [
-    # Core true crime (highest search volume)
     "#TrueCrime", "#UnsolvedMysteries", "#TrueCrimeStories",
     "#CriminalMinds", "#MurderMystery", "#TrueCrimeCommunity",
     "#ColdCase", "#DarkCases", "#TrueCrimeJunkie",
     "#ArchiveOfEnigmas", "#UnsolvedCase", "#MysteryStories",
     "#CrimeDocumentary", "#DarkSecrets", "#TrueCrimePodcast",
-    # Algorithm-boost trending tags
     "#Documentary", "#MysteryDoc", "#RealCrime",
     "#CrimeStorytime", "#Enigma", "#DarkHistory",
 ]
@@ -118,7 +110,6 @@ NICHE_HASHTAGS = {
                    "#CrimeFiles", "#DarkTruths"],
 }
 
-# Trending/seasonal hashtags — update monthly for algorithm freshness
 TRENDING_HASHTAGS = [
     "#NewTrueCrime", "#ViralMystery", "#MustWatch",
     "#CrimeAlert", "#JusticeForVictims", "#ShockingCase",
@@ -126,7 +117,7 @@ TRENDING_HASHTAGS = [
 
 
 # ============================================================
-# PINNED COMMENT TEMPLATES — Engagement Maximisers
+# PINNED COMMENT TEMPLATES
 # ============================================================
 
 PINNED_COMMENT_TEMPLATES = [
@@ -139,10 +130,17 @@ PINNED_COMMENT_TEMPLATES = [
 
 
 # ============================================================
-# 7-LANGUAGE GLOBAL SUPPORT
+# TOP-5 LANGUAGE STRATEGY FOR MONETISATION
 # ============================================================
-# Global true crime audience — each language unlocks a new
-# algorithm territory. YouTube ranks localized content separately.
+# Priority order is based on YouTube audience size and CPM rates:
+#   1. English (en)  — highest CPM, global reach ✅ already running
+#   2. Spanish (es)  — 500M+ speakers, #2 YouTube language globally
+#   3. Portuguese (pt) — Brazil is TOP-3 YouTube market worldwide
+#   4. Hindi (hi)    — 1.4B market, fastest-growing YouTube audience
+#   5. French (fr)   — France + 29 Francophone countries, high CPM
+#
+# German and Japanese are smaller audiences and take longer to monetise.
+# Removed from priority list. Re-add once monetised in top-5.
 # ============================================================
 
 SUPPORTED_LANGUAGES = {
@@ -160,7 +158,7 @@ SUPPORTED_LANGUAGES = {
         "rate": "-3%",
         "audience": "ES, MX, AR, CO, CL",
         "subscribers_target": "Latin America + Spain",
-        "hashtag_suffix": " #CrimenReal #MisterioVerdadero #CasosCriminales",
+        "hashtag_suffix": " #CrimenReal #MisterioVerdadero #CasosCriminales #CrimenesReales",
     },
     "pt": {
         "name": "Portuguese",
@@ -168,23 +166,7 @@ SUPPORTED_LANGUAGES = {
         "rate": "-3%",
         "audience": "BR, PT",
         "subscribers_target": "Brazil + Portugal",
-        "hashtag_suffix": " #CrimeVerdadeiro #MisteriosBrasil #CasoCriminal",
-    },
-    "fr": {
-        "name": "French",
-        "voice": "fr-FR-HenriNeural",
-        "rate": "-4%",
-        "audience": "FR, BE, CH, CA-QC, AF",
-        "subscribers_target": "France + Francophone",
-        "hashtag_suffix": " #CrimeVrai #Mystere #AffaireCriminelle",
-    },
-    "de": {
-        "name": "German",
-        "voice": "de-DE-ConradNeural",
-        "rate": "-4%",
-        "audience": "DE, AT, CH",
-        "subscribers_target": "DACH Region",
-        "hashtag_suffix": " #EchteKrimis #UngeloesterFall #Kriminalfall",
+        "hashtag_suffix": " #CrimeVerdadeiro #MisteriosBrasil #CasoCriminal #CrimesReais",
     },
     "hi": {
         "name": "Hindi",
@@ -192,7 +174,24 @@ SUPPORTED_LANGUAGES = {
         "rate": "-3%",
         "audience": "IN",
         "subscribers_target": "India (1.4B market)",
-        "hashtag_suffix": " #HindiCrime #SachchiGhatna #RahasyaKes",
+        "hashtag_suffix": " #HindiCrime #SachchiGhatna #RahasyaKes #ApradhKaach",
+    },
+    "fr": {
+        "name": "French",
+        "voice": "fr-FR-HenriNeural",
+        "rate": "-4%",
+        "audience": "FR, BE, CH, CA-QC, AF",
+        "subscribers_target": "France + Francophone",
+        "hashtag_suffix": " #CrimeVrai #Mystere #AffaireCriminelle #CrimesReels",
+    },
+    # Keep but deprioritised — add separate workflows later once monetised
+    "de": {
+        "name": "German",
+        "voice": "de-DE-ConradNeural",
+        "rate": "-4%",
+        "audience": "DE, AT, CH",
+        "subscribers_target": "DACH Region",
+        "hashtag_suffix": " #EchteKrimis #UngeloesterFall #Kriminalfall",
     },
     "ja": {
         "name": "Japanese",
@@ -204,7 +203,9 @@ SUPPORTED_LANGUAGES = {
     },
 }
 
-# Primary upload language (always English first)
+# Primary language — always uploaded by the main workflow
 PRIMARY_LANGUAGE = "en"
-# Optional: produce multi-language versions (set to [] to disable)
-EXTRA_LANGUAGES  = ["es", "hi", "ja", "de", "fr", "pt"]   # strings, not variable names
+
+# Languages with dedicated workflows (each runs in its own GitHub Actions job)
+# Managed via BOT_LANGUAGE env var in each workflow file
+EXTRA_LANGUAGES = ["es", "pt", "hi", "fr"]   # for documentation/reference only
