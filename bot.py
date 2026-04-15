@@ -1447,7 +1447,7 @@ def create_thumbnail(image_paths, metadata, story):
         img  = Image.alpha_composite(img.convert("RGBA"), vig).convert("RGB")
         draw = ImageDraw.Draw(img)
         draw_badge(draw, bg=(120,0,0))
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,40,40), shadow=(80,0,0))
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,40,40))
         draw_bottom_bar(draw, bar_color=(15,0,0), accent=(160,0,0))
 
     else:
