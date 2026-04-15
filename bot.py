@@ -1523,7 +1523,15 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
     }
 
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
-    resp  = yt.videos().insert(part="snippet,status",body=body,media_body=media).execute()
+    try:
+        resp = yt.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+    except Exception as e:
+        if "uploadLimitExceeded" in str(e):
+            print("\u26a0\ufe0f  YouTube daily upload limit reached for this channel.")
+            print("   \u27a1  Verify your channel at https://youtube.com/verify to lift the cap.")
+            print("   \u23ed  Skipping upload — video saved locally at:", video_path)
+            return None
+        raise
     vid   = resp.get("id")
     print(f"✅ {kind} uploaded! ID: {vid}")
 
@@ -1640,6 +1648,9 @@ def run_pipeline():
         # 8. Upload with correct language metadata
         video_id  = upload_to_youtube(video_path, thumbnail_path, metadata,
                                        is_short=False, language=lang)
+        if video_id is None:
+            print("⏹  Pipeline stopping cleanly — upload limit reached.")
+            return
         shorts_id = None
         if shorts_path:
             try:
