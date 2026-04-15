@@ -567,6 +567,35 @@ def fetch_videos(queries, target=14):
 
 
 # ============================================
+# ============================================
+# GROQ RATE-LIMIT RETRY WRAPPER
+# ============================================
+import time as _time
+
+def groq_create_with_retry(client, max_retries=6, **kwargs):
+    """
+    Drop-in wrapper for client.chat.completions.create that automatically
+    retries on 429 RateLimitError, sleeping exactly as long as Groq asks.
+    Falls back to exponential backoff if the wait time can't be parsed.
+    """
+    from groq import RateLimitError
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except RateLimitError as e:
+            if attempt == max_retries - 1:
+                raise
+            # Try to parse "Please try again in X.XXs" from the error message
+            wait = None
+            match = re.search(r'try again in ([\d.]+)s', str(e))
+            if match:
+                wait = float(match.group(1)) + 2  # small buffer
+            else:
+                wait = min(5 * 2 ** attempt, 120)  # exponential backoff, cap 2 min
+            print(f"  ⏳ Rate limit hit — waiting {wait:.1f}s then retrying "
+                  f"(attempt {attempt + 1}/{max_retries})...")
+            _time.sleep(wait)
+
 # STEP 5 — GENERATE SCRIPT (20-min TARGET)
 # ============================================
 
@@ -626,7 +655,8 @@ COMMUNITY_POST: (60-word Community tab post with poll question)
 CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
 """
 
-    resp = client.chat.completions.create(
+    resp = groq_create_with_retry(
+        client,
         model=config.GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=8000, temperature=0.88)
@@ -636,7 +666,8 @@ CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
     # Shorts call
     print("  📱 Generating Shorts script (separate call)...")
     try:
-        shorts_resp = client.chat.completions.create(
+        shorts_resp = groq_create_with_retry(
+            client,
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content":
                 f"""Write a YouTube Shorts script (55 seconds, exactly 130-150 words) \
@@ -732,7 +763,8 @@ def translate_script(script, shorts_script, metadata, target_lang):
     client = Groq(api_key=config.GROQ_API_KEY)
 
     # Translate main script (truncate to fit token budget)
-    resp = client.chat.completions.create(
+    resp = groq_create_with_retry(
+        client,
         model=config.GROQ_MODEL,
         messages=[{"role": "user", "content":
             f"Translate this true crime script to {lang_name}. Keep all [PAUSE] and [CHAPTER] markers. Keep the dramatic tone:\n\n{script[:4000]}"}],
@@ -754,7 +786,8 @@ Return ONLY a valid JSON object with these exact keys. No markdown, no extra tex
 Translate the values to {lang_name}. Return valid JSON only."""
 
     try:
-        resp2 = client.chat.completions.create(
+        resp2 = groq_create_with_retry(
+            client,
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content": meta_prompt}],
             max_tokens=1500, temperature=0.3)
