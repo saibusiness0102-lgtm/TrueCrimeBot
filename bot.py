@@ -1,7 +1,7 @@
 # ============================================
-# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v8 VIRAL
-# 20-min videos | 1080p | 7-Language | Peak SEO
-# Interactive Shorts | A/B Thumbnails | Polls
+# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v9 FIXED
+# 20-min videos | 1080p | Multi-Language | Peak SEO
+# Fixes: language pipeline, repeated thumbnails, RSS filtering
 # ============================================
 
 import os
@@ -58,7 +58,6 @@ def update_history(title, topic_type, keywords):
     h["recent_keywords"] = (keywords + h["recent_keywords"])[:30]
     save_history(h)
 
-# Core crime nouns — if ANY of these overlap between titles we block it
 _CRIME_NOUNS = {
     "vanish","vanishes","vanished","missing","disappear","disappeared",
     "murder","murdered","killer","killed","killing","kill","dead","death",
@@ -68,8 +67,22 @@ _CRIME_NOUNS = {
     "husband","family","couple","sister","brother","baby","infant",
 }
 
+# ── Keywords that MUST appear for an RSS story to qualify ────────────────
+_RSS_CRIME_REQUIRED = {
+    "murder","killed","killing","homicide","manslaughter","stabbed","shooting","shot",
+    "missing","disappeared","vanished","abducted","kidnapped","kidnapping",
+    "arrested","convicted","sentenced","charged","indicted","suspect",
+    "victim","crime","robbery","assault","rape","sexual assault","molested",
+    "trafficking","serial killer","cold case","investigation","forensic",
+    "fraud","scam","embezzle","ponzi","poisoned","poisoning",
+}
+
+def is_crime_story(title, content):
+    """Return True only if the story contains at least one crime keyword."""
+    text = (title + " " + content).lower()
+    return any(kw in text for kw in _RSS_CRIME_REQUIRED)
+
 def _title_key_nouns(title):
-    """Return the set of crime-relevant words in a title (lowercase)."""
     return {w.strip("'\".,!?") for w in title.lower().split()} & _CRIME_NOUNS
 
 def is_too_similar(title, topic_type):
@@ -83,11 +96,9 @@ def is_too_similar(title, topic_type):
     for old_title in h["recent_titles"][:15]:
         old_nouns = _title_key_nouns(old_title)
         overlap   = new_nouns & old_nouns
-        # Block if 2+ key nouns overlap (e.g. "mom"+"vanish" = same story angle)
         if len(overlap) >= 2:
             print(f"  ⚠️  Too similar to: '{old_title}' (shared: {overlap}). Skipping.")
             return True
-        # Also block exact first-3-word match
         if title.lower().split()[:3] == old_title.lower().split()[:3]:
             print(f"  ⚠️  Title starts identically to: '{old_title}'. Skipping.")
             return True
@@ -95,7 +106,6 @@ def is_too_similar(title, topic_type):
 
 def detect_topic_type(text):
     text = text.lower()
-    # Order matters: more specific first
     if any(w in text for w in ["serial","spree","multiple victim"]):    return "serial"
     if any(w in text for w in ["rape","sexual assault","molest"]):       return "assault"
     if any(w in text for w in ["caste","dalit","honor killing","dowry"]): return "caste"
@@ -118,19 +128,15 @@ def detect_topic_type(text):
 
 def fetch_from_rss():
     rss_feeds = [
-        # ── International true crime ─────────────────────
         "https://www.crimeonline.com/feed/",
         "https://www.oxygen.com/rss.xml",
         "https://www.investigationdiscovery.com/feed",
-        # ── General news — murders/fraud/assault reported ─
         "https://abcnews.go.com/US/feed",
         "https://feeds.bbci.co.uk/news/world/rss.xml",
         "https://rss.nytimes.com/services/xml/rss/nyt/Crime.xml",
         "https://www.theguardian.com/uk/crime/rss",
-        # ── India / South Asia crimes ─────────────────────
         "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms",
         "https://feeds.feedburner.com/ndtvnews-india-news",
-        # ── Court / justice reporting ─────────────────────
         "https://abcnews.go.com/Court/feed",
         "https://lawandcrime.com/feed/",
     ]
@@ -143,6 +149,10 @@ def fetch_from_rss():
             for entry in entries:
                 content = entry.get("summary","") or entry.get("description","")
                 if len(content) > 300:
+                    # FIX: Only accept genuine crime stories
+                    if not is_crime_story(entry.title, content):
+                        print(f"  ⏭️  Skipping non-crime story: {entry.title[:60]}")
+                        continue
                     topic = detect_topic_type(entry.title + " " + content)
                     if not is_too_similar(entry.title, topic):
                         print(f"✅ RSS story: {entry.title}")
@@ -155,13 +165,11 @@ def fetch_from_wikipedia():
     h = load_history()
     used_keywords = set(h.get("recent_keywords", []))
     cases = [
-        # ── ICONIC SERIAL KILLERS ─────────────────────────────────────────
         "Zodiac Killer","Jack the Ripper","Golden State Killer","Ted Bundy",
         "Jeffrey Dahmer","John Wayne Gacy","BTK killer","Gary Ridgway",
         "Samuel Little","Ed Kemper","Richard Ramirez","Dean Corll",
         "Andrei Chikatilo","Aileen Wuornos","Harold Shipman","H. H. Holmes",
         "Charles Manson","Pedro Lopez","Luis Garavito","John Edward Robinson",
-        # ── MURDERS & HIGH-PROFILE CASES ─────────────────────────────────
         "Black Dahlia murder","Villisca axe murders","Hinterkaifeck murders",
         "Axeman of New Orleans","Cleveland torso murderer","Lizzie Borden",
         "Chris Watts murders","JonBenet Ramsey","Tylenol murders",
@@ -170,7 +178,6 @@ def fetch_from_wikipedia():
         "Menendez brothers","Pamela Smart","Drew Peterson",
         "Robert Durst","Phil Spector murder","Oscar Pistorius trial",
         "Murder of Meredith Kercher","Yvonne Fletcher murder",
-        # ── CASTE / HONOUR / DOWRY CRIMES (India & South Asia) ───────────
         "Khairlanji massacre","Nithari killings","Priyadarshini Mattoo case",
         "Bhanwari Devi murder case","Jessica Lal murder case",
         "Aarushi Talwar murder case","Sheena Bora murder case",
@@ -178,33 +185,27 @@ def fetch_from_wikipedia():
         "Kathua rape case","Hathras case","Budaun murders India",
         "Rohtak honour killing India","Manoj Babli honour killing",
         "Ilavarasan death case Tamil Nadu","Thangjam Manorama case",
-        # ── FRAUD / FINANCIAL CRIME ───────────────────────────────────────
         "Bernie Madoff Ponzi scheme","Enron scandal","WorldCom fraud",
         "Elizabeth Holmes Theranos","Anna Sorokin fraud","Frank Abagnale",
         "Satyam scandal India","2G spectrum scam India","Harshad Mehta scam",
         "Vijay Mallya fraud","Nirav Modi diamond fraud","Subrata Roy fraud",
-        # ── KIDNAPPING / ABDUCTION ────────────────────────────────────────
         "Jaycee Dugard kidnapping","Elizabeth Smart kidnapping",
         "Ariel Castro kidnappings","Natascha Kampusch kidnapping",
         "Patty Hearst kidnapping","Lindbergh kidnapping",
         "Getty kidnapping 1973","Frank Sinatra Jr kidnapping",
-        # ── POISONING CASES ───────────────────────────────────────────────
         "Alexander Litvinenko poisoning","Salisbury Novichok attack",
         "Georgi Markov assassination","Graham Young poisoner",
         "Marie Besnard poison murders","Nannie Doss poisoner",
-        # ── CULTS / MASS EVENTS ───────────────────────────────────────────
         "Jonestown massacre","Heaven's Gate cult","NXIVM cult",
         "Aum Shinrikyo","Branch Davidians Waco","The Family cult Australia",
         "Order of the Solar Temple","Rajneeshee bioterror attack",
-        # ── HEISTS / THEFT ────────────────────────────────────────────────
         "DB Cooper","Isabella Stewart Gardner Museum theft",
         "Great Train Robbery 1963","Antwerp diamond heist",
         "Hatton Garden heist","Banco Central Brazil robbery",
         "Dunbar Armored robbery","Lufthansa heist 1978",
-        # ── UNSOLVED / MYSTERIOUS ─────────────────────────────────────────
         "Tamam Shud case","Dyatlov Pass incident","Isdal Woman",
         "Beaumont children disappearance","Sodder children disappearance",
-        "Zodiac ciphers","D.B. Cooper","Marilyn Monroe death",
+        "Zodiac ciphers","Marilyn Monroe death",
         "Elisa Lam case","Max Headroom broadcast intrusion",
         "Boy in the box Philadelphia","Babushka Lady assassination",
         "Gabby Petito case","Delphi murders cold case",
@@ -236,17 +237,10 @@ def fetch_story():
 # ============================================
 
 def extract_keywords(story):
-    """
-    Topic-specific image & video query pools.
-    Every topic has its own visual universe so no two videos look alike.
-    Pexels returns 3 results per query, so 24 images = 8 unique queries used.
-    We pass 30 queries so shuffle variety is high; fetch logic picks first 24.
-    """
     title   = story["title"].lower()
     content = (story.get("content","") or "").lower()
     text    = title + " " + content
 
-    # ── Per-topic image pools (visually distinct from each other) ─────────────
     TOPIC_IMAGES = {
         "murder": [
             "bloody crime scene investigation",
@@ -346,7 +340,6 @@ def extract_keywords(story):
         ],
     }
 
-    # ── Per-topic video pools ─────────────────────────────────────────────────
     TOPIC_VIDEOS = {
         "murder": [
             "ambulance emergency lights night",
@@ -402,7 +395,6 @@ def extract_keywords(story):
         ],
     }
 
-    # ── Universal fallback images (visually varied) ───────────────────────────
     UNIVERSAL_IMAGES = [
         "dark dramatic cinematic shadows",
         "vintage sepia photograph dark room",
@@ -418,10 +410,8 @@ def extract_keywords(story):
         "telephone vintage dramatic dark",
     ]
 
-    # ── Detect topic ──────────────────────────────────────────────────────────
     topic = story.get("topic", "other")
     if topic == "other":
-        # Re-detect from text
         if any(w in text for w in ["serial","spree"]): topic = "serial"
         elif any(w in text for w in ["murder","kill","homicide"]): topic = "murder"
         elif any(w in text for w in ["missing","disappear","vanish"]): topic = "missing"
@@ -430,11 +420,9 @@ def extract_keywords(story):
         elif any(w in text for w in ["conspiracy","cover","government"]): topic = "conspiracy"
         elif any(w in text for w in ["cold case","decade","unsolved"]): topic = "coldcase"
 
-    # ── Build final query lists ───────────────────────────────────────────────
     topic_imgs = TOPIC_IMAGES.get(topic, TOPIC_IMAGES.get("unsolved", []))
     topic_vids = TOPIC_VIDEOS.get(topic, TOPIC_VIDEOS["default"])
 
-    # Interleave topic-specific + universal so every run has variety
     image_queries = []
     for i, q in enumerate(topic_imgs):
         image_queries.append(q)
@@ -446,7 +434,6 @@ def extract_keywords(story):
     random.shuffle(image_queries)
     random.shuffle(video_queries)
 
-    # Deduplicate while preserving order
     seen = set()
     image_queries = [q for q in image_queries if not (q in seen or seen.add(q))]
     video_queries = [q for q in video_queries if not (q in seen or seen.add(q))]
@@ -480,7 +467,6 @@ def fetch_images(queries, target=24):
                 if len(images) >= target: break
                 if photo["id"] in used_ids: continue
                 used_ids.add(photo["id"])
-                # Prefer original quality for 1080p output
                 url = photo["src"].get("original", photo["src"]["large2x"])
                 r   = requests.get(url, timeout=20)
                 if r.status_code == 200:
@@ -514,7 +500,6 @@ def fetch_videos_pexels(queries, target, vid_dir):
                 if len(videos) >= target: break
                 if item["id"] in used_ids: continue
                 used_ids.add(item["id"])
-                # Prefer 1080p quality
                 files = sorted(item["video_files"], key=lambda x: x.get("width",0), reverse=True)
                 chosen = next((f for f in files if 1080 <= f.get("height",0) <= 1080), None) or \
                          next((f for f in files if f.get("width",0) <= 1920), files[0] if files else None)
@@ -648,23 +633,21 @@ CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
 
     full = resp.choices[0].message.content
 
-    # ── Separate Shorts call — never truncated by main script length ─────────
+    # Shorts call
     print("  📱 Generating Shorts script (separate call)...")
     try:
         shorts_resp = client.chat.completions.create(
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content":
                 f"""Write a YouTube Shorts script (55 seconds, exactly 130-150 words) \
-about this true crime case: {story['title']}\n\nContext: {story['content'][:800]}\n\nRULES:\n- Hook in the FIRST 3 WORDS — no intro, no "hey guys"\n- Fast punchy sentences. Maximum tension.\n- Include ONE shocking specific detail (date, name, number)\n- End with a question that makes viewers follow\n- Final line MUST be: "Follow for daily mysteries."\n- Write ONLY the spoken words, no stage directions."""
+about this true crime case: {story['title']}\n\nContext: {story['content'][:800]}\n\nRULES:\n- Hook in the FIRST 3 WORDS — no intro, no "hey guys"\n- Fast punchy sentences. Maximum tension.\n- Include ONE shocking specific detail (date, name, number)\n- End with a question that makes viewers follow\n- Final line MUST be: "Follow for daily mysteries."\n- Write ONLY the spoken words, no stage directions.{lang_instruction}"""
             }],
             max_tokens=400, temperature=0.85)
         shorts_script = shorts_resp.choices[0].message.content.strip()
     except Exception as e:
         print(f"  ⚠️ Shorts call failed: {e}")
         shorts_script = ""
-    # ─────────────────────────────────────────────────────────────────────────
 
-    # Extract metadata
     if "---METADATA---" in full:
         script, meta_raw = full.split("---METADATA---", 1)
     else:
@@ -692,9 +675,7 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
     metadata.setdefault("pinned_comment", "What do YOU think happened? Drop your theory! 👇")
     metadata.setdefault("community_post", f"We just dropped a new case. {story['title']}. Do you think justice was served? Comment your theory!")
 
-    title_lower = story["title"].lower()
     topic_key   = story.get("topic", "other")
-    # Extra niche hashtags for new topic types not in config
     _EXTRA_NICHE = {
         "assault":  ["#CrimesAgainstWomen","#JusticeForVictims","#SexualAssaultAwareness"],
         "caste":    ["#CasteViolence","#DalitRights","#HonourCrime","#JusticeInIndia"],
@@ -706,9 +687,10 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
              _EXTRA_NICHE.get(topic_key) or
              config.NICHE_HASHTAGS.get("default", []))
 
-    # Add trending hashtags
+    # Add language-specific hashtags
+    lang_suffix = config.SUPPORTED_LANGUAGES.get(language, {}).get("hashtag_suffix", "")
     trending = getattr(config, "TRENDING_HASHTAGS", [])
-    hashtags = " ".join(config.BASE_HASHTAGS[:15] + niche[:5] + trending[:3])
+    hashtags = " ".join(config.BASE_HASHTAGS[:15] + niche[:5] + trending[:3]) + lang_suffix
     metadata["hashtags"] = hashtags
 
     chapters = metadata.get("chapters", "0:00 Hook\n2:00 Background\n6:00 The Crime\n11:00 Investigation\n16:00 Aftermath\n19:00 Conclusion")
@@ -735,10 +717,11 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
 
 # ============================================
 # STEP 5b — TRANSLATE SCRIPT (Multi-language)
+# FIX: Now properly updates title, description and all metadata
 # ============================================
 
 def translate_script(script, shorts_script, metadata, target_lang):
-    """Translate script and metadata to target language using Groq."""
+    """Translate script and ALL metadata to target language using Groq."""
     if target_lang == "en":
         return script, shorts_script, metadata
 
@@ -748,21 +731,71 @@ def translate_script(script, shorts_script, metadata, target_lang):
 
     client = Groq(api_key=config.GROQ_API_KEY)
 
-    # Translate main script
+    # Translate main script (truncate to fit token budget)
     resp = client.chat.completions.create(
         model=config.GROQ_MODEL,
-        messages=[{"role": "user", "content": f"Translate this true crime script to {lang_name}. Keep all [PAUSE] and [CHAPTER] markers. Keep the dramatic tone:\n\n{script[:4000]}"}],
+        messages=[{"role": "user", "content":
+            f"Translate this true crime script to {lang_name}. Keep all [PAUSE] and [CHAPTER] markers. Keep the dramatic tone:\n\n{script[:4000]}"}],
         max_tokens=5000, temperature=0.3)
     translated_script = resp.choices[0].message.content
 
-    # Translate shorts + metadata
-    resp2 = client.chat.completions.create(
-        model=config.GROQ_MODEL,
-        messages=[{"role": "user", "content": f"Translate to {lang_name}: Title: {metadata['title']}\nDescription: {metadata['description'][:500]}\nShorts script: {shorts_script}\nPinned comment: {metadata['pinned_comment']}\n\nReturn in same format with labels."}],
-        max_tokens=1500, temperature=0.3)
+    # FIX: Translate shorts and metadata using structured JSON output
+    meta_prompt = f"""Translate ALL of the following to {lang_name}.
+Return ONLY a valid JSON object with these exact keys. No markdown, no extra text.
+
+{{
+  "title": "{metadata.get('title','').replace('"', '')}",
+  "description": "{metadata.get('description','')[:400].replace('"', '')}",
+  "shorts_script": "{(shorts_script or '').replace(chr(10), ' ').replace('"', '')[:500]}",
+  "pinned_comment": "{metadata.get('pinned_comment','').replace('"', '')}",
+  "community_post": "{metadata.get('community_post','').replace('"', '')}"
+}}
+
+Translate the values to {lang_name}. Return valid JSON only."""
+
+    try:
+        resp2 = client.chat.completions.create(
+            model=config.GROQ_MODEL,
+            messages=[{"role": "user", "content": meta_prompt}],
+            max_tokens=1500, temperature=0.3)
+        raw = resp2.choices[0].message.content.strip()
+        # Strip markdown fences if present
+        raw = re.sub(r'^```[a-z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw)
+        translated_meta = json.loads(raw)
+
+        # Update metadata with translations
+        metadata = dict(metadata)  # copy
+        metadata["title"]          = translated_meta.get("title", metadata["title"])
+        metadata["description"]    = translated_meta.get("description", metadata["description"])
+        metadata["pinned_comment"] = translated_meta.get("pinned_comment", metadata["pinned_comment"])
+        metadata["community_post"] = translated_meta.get("community_post", metadata["community_post"])
+        translated_shorts          = translated_meta.get("shorts_script", shorts_script)
+
+        # Rebuild full description with translated parts
+        chapters = metadata.get("chapters", "0:00 Hook")
+        lang_suffix = lang_info.get("hashtag_suffix", "")
+        trending = getattr(config, "TRENDING_HASHTAGS", [])
+        hashtags = " ".join(config.BASE_HASHTAGS[:10] + trending[:3]) + lang_suffix
+        metadata["hashtags"] = hashtags
+        metadata["full_description"] = f"""{metadata['description']}
+
+⏱️ CHAPTERS:
+{chapters}
+
+🔔 Subscribe → {config.CHANNEL_HANDLE}
+👍 Like  💬 Comment  🔕 Notifications
+
+{hashtags}
+
+© {config.CHANNEL_NAME} — Educational purposes only."""
+
+    except Exception as e:
+        print(f"  ⚠️ Metadata translation parse failed: {e} — using English metadata")
+        translated_shorts = shorts_script
 
     print(f"✅ Translation to {lang_name} done!")
-    return translated_script, shorts_script, metadata
+    return translated_script, translated_shorts, metadata
 
 
 # ============================================
@@ -869,7 +902,7 @@ def mix_audio_with_music(voice_path, music_path, output_path):
             music = concatenate_audioclips([music] * loops)
         music = music.subclip(0, voice.duration)
         music = music.audio_fadein(3).audio_fadeout(5)
-        music = music.volumex(0.10)  # 10% volume — barely audible atmosphere
+        music = music.volumex(0.10)
         final_audio = CompositeAudioClip([voice, music])
         final_audio.write_audiofile(output_path, fps=44100, logger=None)
         voice.close(); music.close()
@@ -896,9 +929,8 @@ def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
         arr = np.array(pil)
     except Exception as _img_err:
         print(f"  ⚠️ Image load failed ({_img_err}), using fallback frame")
-        # Dark crimson fallback — never pure black; keeps cinematic feel
         fallback = np.zeros((H, W, 3), dtype=np.uint8)
-        fallback[:, :, 0] = 18   # slight red tint
+        fallback[:, :, 0] = 18
         arr = fallback
         nw, nh = W, H
 
@@ -915,14 +947,13 @@ def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
 
     def make_frame(t):
         p = t / max(duration, 0.001)
-        p = p * p * (3 - 2 * p)  # Smooth ease
+        p = p * p * (3 - 2 * p)
         x1 = max(0, min(int(sx1+(ex1-sx1)*p), nw-2))
         y1 = max(0, min(int(sy1+(ey1-sy1)*p), nh-2))
         x2 = max(x1+1, min(int(sx2+(ex2-sx2)*p), nw))
         y2 = max(y1+1, min(int(sy2+(ey2-sy2)*p), nh))
         crop = arr[y1:y2, x1:x2]
         if crop.size == 0:
-            # Never return black — clamp coords and return full scaled array
             x1, y1 = max(0, x1-1), max(0, y1-1)
             x2, y2 = min(nw, x1+2), min(nh, y1+2)
             crop = arr[y1:y2, x1:x2]
@@ -945,7 +976,6 @@ def process_video_clip(vid_info, duration, W=1920, H=1080):
             loops = int(math.ceil(duration / clip.duration)) + 1
             clip  = concatenate_videoclips([clip] * loops)
         clip = clip.subclip(0, duration)
-        # Scale to 1080p maintaining aspect ratio
         clip = clip.resize(height=H)
         if clip.size[0] < W: clip = clip.resize(width=W)
         if clip.size[0] > W:
@@ -954,7 +984,6 @@ def process_video_clip(vid_info, duration, W=1920, H=1080):
         if clip.size[1] > H:
             yc = clip.size[1] // 2
             clip = clip.crop(y1=yc - H//2, y2=yc + H//2)
-        # Cinematic color grading
         clip = clip.fl_image(lambda frame:
             np.clip(frame.astype(np.float32) * 0.72, 0, 255).astype(np.uint8))
         return clip
@@ -982,19 +1011,15 @@ def create_chapter_card(text, duration=3.0, W=1920, H=1080, style="cinematic"):
         except:
             f_big = f_sub = ImageFont.load_default()
 
-        # Cinematic red line accent
         lw = int(400 * alpha)
         draw.rectangle([(W//2 - lw//2, H//2 - 72), (W//2 + lw//2, H//2 - 68)], fill=(int(200*alpha),0,0))
 
-        # Channel name
         sub = config.CHANNEL_NAME.upper()
         b   = draw.textbbox((0,0), sub, font=f_sub)
         draw.text(((W-(b[2]-b[0]))//2, H//2-112), sub, font=f_sub, fill=(int(100*alpha),0,0))
 
-        # Chapter text
         b = draw.textbbox((0,0), text, font=f_big)
         tw = b[2]-b[0]
-        # Shadow
         draw.text(((W-tw)//2+4, H//2-14), text, font=f_big, fill=(int(30*alpha),0,0))
         draw.text(((W-tw)//2, H//2-18), text, font=f_big, fill=(int(255*alpha),int(255*alpha),int(255*alpha)))
 
@@ -1025,7 +1050,6 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     CARD_DUR   = 3.0
     CARD_EVERY = 4
 
-    # Build media sequence
     media_sequence = []
     img_idx = vid_idx = 0
     while True:
@@ -1084,9 +1108,6 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     clips.append(create_chapter_card("🔴 Subscribe for Daily Mysteries", duration=outro_dur))
 
     print(f"  🔗 Joining {len(clips)} clips...")
-    # "compose" is safe now that every clip has .size set explicitly.
-    # Do NOT free clips before write_videofile — concatenate is lazy and
-    # holds live references into the clips list until rendering is done.
     try:
         video = concatenate_videoclips(clips, method="compose")
     except Exception as e:
@@ -1096,7 +1117,6 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     if video.duration > total_dur + 0.5:
         video = video.subclip(0, total_dur)
 
-    # Watermark overlay
     def wm_frame(t):
         img  = Image.new("RGBA", (W, 44), (0,0,0,0))
         draw = ImageDraw.Draw(img)
@@ -1113,10 +1133,8 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     final = CompositeVideoClip([video, wm], size=(W, H)).set_audio(audio)
     out   = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
     print("  💾 Writing final video (1080p)...")
-    # threads=2: leave headroom so the runner OS isn't starved
     final.write_videofile(out, fps=config.VIDEO_FPS, codec="libx264", audio_codec="aac",
                           threads=2, preset="ultrafast", bitrate=config.VIDEO_BITRATE, logger=None)
-    # Safe to free everything NOW — write_videofile has fully rendered all frames
     for _c in clips:
         try: _c.close()
         except: pass
@@ -1187,7 +1205,6 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
         clip = make_vertical_kb(img_path, clip_dur, KB_DIRS[i % len(KB_DIRS)])
         dark_ov = ColorClip(size=(W,H), color=(0,0,0), duration=clip_dur).set_opacity(0.30)
 
-        # Caption overlay at bottom
         def make_caption(t, title=metadata.get("title","")[:55]):
             img  = Image.new("RGBA", (W, 220), (0,0,0,0))
             overlay = Image.new("RGBA", (W, 220), (0,0,0,170))
@@ -1198,10 +1215,8 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
                 f_title = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 60)
             except:
                 f_ch = f_title = ImageFont.load_default()
-            # Red dot + channel name
             draw.ellipse([(36,20),(62,46)], fill=(220,0,0,255))
             draw.text((72, 22), config.CHANNEL_NAME, font=f_ch, fill=(220,220,220,230))
-            # Title (split into 2 lines)
             words = title.split()
             mid   = len(words)//2
             line1 = " ".join(words[:mid])
@@ -1233,10 +1248,10 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
 
 # ============================================
 # STEP 11 — THUMBNAIL (4 Styles, A/B Testing)
+# FIX: Story-seeded randomisation prevents repeated thumbnails
 # ============================================
 
 def _wrap_text(draw, text, font, max_width):
-    """Word-wrap text to fit within max_width pixels. Returns list of lines."""
     words  = text.split()
     lines  = []
     line   = ""
@@ -1254,52 +1269,55 @@ def _wrap_text(draw, text, font, max_width):
     return lines or [text]
 
 def _draw_text_shadow(draw, x, y, text, font, fill, shadow=(0,0,0), depth=4):
-    """Draw text with a solid drop shadow."""
     for dx in range(-depth, depth+1, depth):
         for dy in range(-depth, depth+1, depth):
             if dx or dy:
                 draw.text((x+dx, y+dy), text, font=font, fill=shadow)
     draw.text((x, y), text, font=font, fill=fill)
 
-def _best_bg_image(image_paths):
-    """Pick a background image that isn't too dark or too uniform."""
-    import random
-    candidates = image_paths[:6] if len(image_paths) >= 6 else image_paths
-    best, best_score = candidates[0], -1
+def _best_bg_image(image_paths, story_title=""):
+    """
+    FIX: Use story title as random seed so every story gets a different
+    background image, preventing repeated thumbnail visuals.
+    Score all candidates, then pick randomly from the top 3.
+    """
+    import random as _r
+    rng = _r.Random(hash(story_title) % 2**31)
+    # Score more candidates than before (up to 12)
+    candidates = image_paths[:min(12, len(image_paths))] if len(image_paths) >= 3 else image_paths
+    scored = []
     for p in candidates:
         try:
             arr = np.array(Image.open(p).convert("RGB").resize((160, 90)))
             brightness = arr.mean()
             std        = arr.std()
             score      = std * 0.6 + min(brightness, 120) * 0.4
-            if score > best_score:
-                best, best_score = p, score
+            scored.append((score, p))
         except:
-            pass
-    return best
+            scored.append((0, p))
+    scored.sort(reverse=True)
+    # FIX: Pick randomly from top 3 (not always the absolute best)
+    top3 = [p for _, p in scored[:3]]
+    return rng.choice(top3)
 
 def create_thumbnail(image_paths, metadata, story):
     print("\n🖼️  Step 11: Creating thumbnail...")
-    W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT   # 1280 x 720
+    W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT
     thumb = os.path.join(config.OUTPUT_FOLDER, "thumbnail.jpg")
 
     style      = str(metadata.get("thumbnail_style", "1")).strip()
     thumb_text = metadata.get("thumbnail_text", "SHOCKING CASE").upper()
-    # Shorten thumb_text if too long
     if len(thumb_text) > 28:
         thumb_text = thumb_text[:25].rsplit(" ", 1)[0] + "..."
 
-    # Full title for bottom bar — wrapped if needed
     raw_title  = story["title"]
 
-    # ── Fonts ────────────────────────────────────────────────────────────────
     FONT_PATH_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     FONT_PATH_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     try:
-        # Scale headline size based on word count
         word_count = len(thumb_text.split())
         hl_size    = 108 if word_count <= 2 else (88 if word_count <= 4 else 72)
-        f_hl  = ImageFont.truetype(FONT_PATH_BOLD, hl_size)    # headline
+        f_hl  = ImageFont.truetype(FONT_PATH_BOLD, hl_size)
         f_lg  = ImageFont.truetype(FONT_PATH_BOLD, 52)
         f_md  = ImageFont.truetype(FONT_PATH_BOLD, 36)
         f_sm  = ImageFont.truetype(FONT_PATH_REG,  26)
@@ -1307,8 +1325,8 @@ def create_thumbnail(image_paths, metadata, story):
     except:
         f_hl = f_lg = f_md = f_sm = f_tag = ImageFont.load_default()
 
-    # ── Background ────────────────────────────────────────────────────────────
-    bg_path  = _best_bg_image(image_paths) if image_paths else None
+    # FIX: Pass story title for seeded randomisation
+    bg_path  = _best_bg_image(image_paths, story_title=raw_title) if image_paths else None
     base_img = Image.new("RGB", (W, H), (10, 0, 0))
     if bg_path:
         try:
@@ -1316,7 +1334,6 @@ def create_thumbnail(image_paths, metadata, story):
         except:
             pass
 
-    # ── Helper: draw wrapped headline centred in a zone ───────────────────────
     def draw_headline(draw, text, font, zone_y, zone_h, fill=(255,255,255), max_w=None):
         max_w  = max_w or W - 60
         lines  = _wrap_text(draw, text, font, max_w)
@@ -1328,18 +1345,16 @@ def create_thumbnail(image_paths, metadata, story):
             x  = (W - lw) // 2
             _draw_text_shadow(draw, x, y, line, font, fill=fill)
             y += lh
-        return y   # bottom of last line
+        return y
 
-    # ── Helper: bottom title bar ──────────────────────────────────────────────
     def draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0)):
         draw.rectangle([(0, H-72), (W, H)], fill=bar_color)
-        draw.rectangle([(0, H-74), (W, H-72)], fill=accent)   # accent strip
+        draw.rectangle([(0, H-74), (W, H-72)], fill=accent)
         title_lines = _wrap_text(draw, raw_title, f_md, W - 60)
         line = title_lines[0][:55] + ("..." if len(title_lines[0]) > 55 else "")
         lw   = draw.textbbox((0,0), line, font=f_md)[2]
         draw.text(((W-lw)//2, H-62), line, font=f_md, fill=(240,240,240))
 
-    # ── Helper: channel badge top-left ─────────────────────────────────────────
     def draw_badge(draw, bg=(180,0,0), fg=(255,255,255)):
         label = config.CHANNEL_NAME.upper()
         lw    = draw.textbbox((0,0), label, font=f_tag)[2]
@@ -1347,15 +1362,10 @@ def create_thumbnail(image_paths, metadata, story):
         draw.rounded_rectangle([(18,14),(lw+pad*2+18, 46)], radius=4, fill=bg)
         draw.text((18+pad, 18), label, font=f_tag, fill=fg)
 
-    # ════════════════════════════════════════════════════════════════════
-    # STYLE 1 — Classic: dark cinematic, white glow headline, red badge
-    # Best for: any case. Safe default.
-    # ════════════════════════════════════════════════════════════════════
     if style == "1":
         img = ImageEnhance.Brightness(base_img).enhance(0.28)
         img = ImageEnhance.Color(img).enhance(0.5)
         img = ImageEnhance.Contrast(img).enhance(1.3)
-        # Gradient overlay — darker at top, lighter in middle
         grad = Image.new("RGBA", (W, H), (0,0,0,0))
         gd   = ImageDraw.Draw(grad)
         for y in range(H):
@@ -1364,14 +1374,9 @@ def create_thumbnail(image_paths, metadata, story):
         img = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
         draw = ImageDraw.Draw(img)
         draw_badge(draw)
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140,
-                      fill=(255,255,255))
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,255,255))
         draw_bottom_bar(draw)
 
-    # ════════════════════════════════════════════════════════════════════
-    # STYLE 2 — Red Split: left dark/red tint | right dark image
-    # Best for: murders, killers
-    # ════════════════════════════════════════════════════════════════════
     elif style == "2":
         left  = base_img.crop((0, 0, W//2, H))
         right = base_img.crop((W//2, 0, W, H))
@@ -1379,21 +1384,15 @@ def create_thumbnail(image_paths, metadata, story):
         left  = ImageEnhance.Color(left).enhance(0.2)
         right = ImageEnhance.Brightness(right).enhance(0.30)
         right = ImageEnhance.Color(right).enhance(0.45)
-        # Red tint on left
         tint     = Image.new("RGBA", (W//2, H), (160,0,0,130))
         left_img = Image.alpha_composite(left.convert("RGBA"), tint).convert("RGB")
         img      = Image.new("RGB", (W, H))
         img.paste(left_img, (0, 0))
         img.paste(right, (W//2, 0))
         draw = ImageDraw.Draw(img)
-        # Divider
         draw.rectangle([(W//2-4, 0), (W//2+4, H)], fill=(230,0,0))
         draw_badge(draw)
-        # Headline on left half
-        draw_headline(draw, thumb_text, f_hl,
-                      zone_y=60, zone_h=H-140, max_w=W//2-40,
-                      fill=(255,255,255))
-        # Sub-title on right half
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, max_w=W//2-40, fill=(255,255,255))
         sub_lines = _wrap_text(draw, raw_title, f_md, W//2-40)
         sy = H//2 - 30
         for line in sub_lines[:2]:
@@ -1403,15 +1402,10 @@ def create_thumbnail(image_paths, metadata, story):
             sy += 46
         draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0))
 
-    # ════════════════════════════════════════════════════════════════════
-    # STYLE 3 — Dark Vignette: deep dark, red glowing text
-    # Best for: unsolved, conspiracy, cold case
-    # ════════════════════════════════════════════════════════════════════
     elif style == "3":
         img  = ImageEnhance.Brightness(base_img).enhance(0.15)
         img  = ImageEnhance.Color(img).enhance(0.2)
         img  = img.filter(ImageFilter.GaussianBlur(radius=2))
-        # Heavy vignette
         vig  = Image.new("RGBA", (W, H), (0,0,0,0))
         vd   = ImageDraw.Draw(vig)
         for i in range(0, 350, 2):
@@ -1420,19 +1414,12 @@ def create_thumbnail(image_paths, metadata, story):
         img  = Image.alpha_composite(img.convert("RGBA"), vig).convert("RGB")
         draw = ImageDraw.Draw(img)
         draw_badge(draw, bg=(120,0,0))
-        # Red glowing headline
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140,
-                      fill=(255,40,40), shadow=(80,0,0))
+        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,40,40), shadow=(80,0,0))
         draw_bottom_bar(draw, bar_color=(15,0,0), accent=(160,0,0))
 
-    # ════════════════════════════════════════════════════════════════════
-    # STYLE 4 — Warning Banner: high contrast, yellow accents
-    # Best for: shocking reveals, unexpected perpetrators
-    # ════════════════════════════════════════════════════════════════════
     else:
         img  = ImageEnhance.Brightness(base_img).enhance(0.25)
         img  = ImageEnhance.Color(img).enhance(0.35)
-        # Dark gradient
         grad = Image.new("RGBA", (W, H), (0,0,0,0))
         gd   = ImageDraw.Draw(grad)
         for y in range(H):
@@ -1440,15 +1427,11 @@ def create_thumbnail(image_paths, metadata, story):
             gd.line([(0,y),(W,y)], fill=(0,0,0,alpha))
         img  = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
         draw = ImageDraw.Draw(img)
-        # Yellow top warning bar
         draw.rectangle([(0,0),(W,64)], fill=(220,170,0))
         warn = "TRUE CRIME  //  " + config.CHANNEL_NAME.upper() + "  //  DARK CASE"
         ww   = draw.textbbox((0,0), warn, font=f_sm)[2]
         draw.text(((W-ww)//2, 18), warn, font=f_sm, fill=(0,0,0))
-        # White headline
-        draw_headline(draw, thumb_text, f_hl, zone_y=70, zone_h=H-160,
-                      fill=(255,255,255))
-        # Yellow sub-title
+        draw_headline(draw, thumb_text, f_hl, zone_y=70, zone_h=H-160, fill=(255,255,255))
         sub_lines = _wrap_text(draw, raw_title, f_lg, W-80)
         sy = H - 130
         for line in sub_lines[:1]:
@@ -1458,19 +1441,20 @@ def create_thumbnail(image_paths, metadata, story):
         draw.rectangle([(0,H-62),(W,H-60)], fill=(220,170,0))
         draw.text((24,H-48), "UNSOLVED  *  TRUE CRIME  *  DARK MYSTERIES", font=f_tag, fill=(130,130,130))
 
-    # ── Save ─────────────────────────────────────────────────────────────────
-    # PIL save handles JPEG encoding; quality=95 keeps file under 2MB (YT limit)
     img.save(thumb, "JPEG", quality=95, optimize=True)
     size_kb = os.path.getsize(thumb) // 1024
     print(f"✅ Thumbnail created! Style {style} | {W}x{H} | {size_kb}KB")
     return thumb
+
+
 # ============================================
 # STEP 12 — UPLOAD TO YOUTUBE
+# FIX: Now accepts language parameter and sets correct defaultLanguage
 # ============================================
 
-def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
+def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, language="en"):
     kind = "Short" if is_short else "Video"
-    print(f"\n📤 Step 12: Uploading {kind} to YouTube...")
+    print(f"\n📤 Step 12: Uploading {kind} to YouTube ({language.upper()})...")
 
     td    = json.loads(config.YOUTUBE_TOKEN)
     creds = Credentials(
@@ -1492,14 +1476,15 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
         description = metadata.get("full_description","")
         tags        = metadata.get("tags_list",[])
 
+    # FIX: Use the actual language code for this video
     body = {
         "snippet": {
             "title": title,
             "description": description,
             "tags": tags[:500],
             "categoryId": "25",
-            "defaultLanguage": "en",
-            "defaultAudioLanguage": "en"
+            "defaultLanguage": language,          # FIX: was hardcoded "en"
+            "defaultAudioLanguage": language,     # FIX: was hardcoded "en"
         },
         "status": {"privacyStatus":"public","selfDeclaredMadeForKids":False}
     }
@@ -1513,7 +1498,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
         size_kb = os.path.getsize(thumbnail_path) // 1024
         print(f"  📸 Uploading thumbnail ({size_kb}KB) for video {vid}...")
         thumb_ok = False
-        for attempt in range(1, 4):   # 3 attempts with back-off
+        for attempt in range(1, 4):
             try:
                 import time as _time
                 yt.thumbnails().set(
@@ -1529,20 +1514,16 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
                 print(f"  ❌ Thumbnail attempt {attempt}/3 failed: {err_str[:120]}")
                 if "forbidden" in err_str.lower() or "403" in err_str or "insufficientPermissions" in err_str:
                     print("  ⚠️  CHANNEL NOT VERIFIED — go to https://www.youtube.com/verify")
-                    print("     YouTube requires phone verification to upload custom thumbnails via API.")
-                    break   # No point retrying a permissions error
+                    break
                 if attempt < 3:
                     _time.sleep(5 * attempt)
         if not thumb_ok:
-            # Save thumbnail locally so it can be manually uploaded
             manual_path = os.path.join(config.OUTPUT_FOLDER, f"thumbnail_manual_{vid}.jpg")
             import shutil as _sh
             _sh.copy(thumbnail_path, manual_path)
             print(f"  💾 Thumbnail saved for manual upload: {manual_path}")
-            print(f"     Upload manually: YouTube Studio → {vid} → Customise → Thumbnail")
 
     if not is_short:
-        # Pinned comment with engagement question
         pinned     = metadata.get("pinned_comment","What do YOU think happened? 👇")
         tmpl       = random.choice(config.PINNED_COMMENT_TEMPLATES)
         pinned_msg = tmpl.format(question=pinned, handle=config.CHANNEL_HANDLE)
@@ -1560,43 +1541,59 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False):
 
 # ============================================
 # MAIN PIPELINE
+# FIX: Now reads BOT_LANGUAGE env var to run any language
 # ============================================
 
 def run_pipeline():
+    # FIX: Read language from environment variable
+    lang = os.environ.get("BOT_LANGUAGE", "en").strip().lower()
+    lang_cfg = config.SUPPORTED_LANGUAGES.get(lang, config.SUPPORTED_LANGUAGES["en"])
+    lang_name = lang_cfg.get("name", "English")
+    voice = lang_cfg.get("voice", config.TTS_VOICE)
+    rate  = lang_cfg.get("rate",  config.TTS_RATE)
+
     print("="*55)
-    print("🚀 ARCHIVE OF ENIGMAS — Documentary Pipeline v8 VIRAL")
+    print(f"🚀 ARCHIVE OF ENIGMAS — Pipeline v9 | Lang: {lang_name}")
     print("="*55)
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
 
     try:
-        # 1. Fetch story
+        # 1. Fetch story (always in English from sources)
         story = fetch_story()
         topic = story.get("topic","other")
-        print(f"  📌 Topic: {topic}")
+        print(f"  📌 Topic: {topic} | Language: {lang_name}")
 
-        # 2. Generate script (20-min target)
-        script, shorts_script, metadata = generate_script(story, language="en")
+        # 2. Generate script
+        if lang == "en":
+            # Generate directly in English
+            script, shorts_script, metadata = generate_script(story, language="en")
+        else:
+            # FIX: Generate English first, then translate with proper metadata update
+            print(f"  🌐 Generating English base, then translating to {lang_name}...")
+            script, shorts_script, metadata = generate_script(story, language="en")
+            script, shorts_script, metadata = translate_script(script, shorts_script, metadata, lang)
 
-        # 3. Fetch media (more assets for longer video)
+        # 3. Fetch media
         img_queries, vid_queries = extract_keywords(story)
         image_paths = fetch_images(img_queries, target=24)
         video_clips = fetch_videos(vid_queries, target=14)
 
-        # 4. Voiceover (free Microsoft Neural)
-        audio_path        = generate_voiceover(script, label="voiceover")
+        # 4. Voiceover with language-specific voice
+        audio_path        = generate_voiceover(script, label=f"voiceover_{lang}", voice=voice, rate=rate)
         shorts_audio_path = None
         if shorts_script:
-            shorts_audio_path = generate_voiceover(shorts_script, label="shorts_voiceover")
+            shorts_audio_path = generate_voiceover(
+                shorts_script, label=f"shorts_voiceover_{lang}", voice=voice, rate=rate)
 
         # 4b. Background music
         music_path       = fetch_background_music()
-        mixed_audio_path = os.path.join(config.OUTPUT_FOLDER, "voiceover_mixed.mp3")
+        mixed_audio_path = os.path.join(config.OUTPUT_FOLDER, f"voiceover_{lang}_mixed.mp3")
         audio_path       = mix_audio_with_music(audio_path, music_path, mixed_audio_path)
 
-        # 5. Thumbnail (A/B rotating styles)
+        # 5. Thumbnail (story-seeded, no repeats)
         thumbnail_path = create_thumbnail(image_paths, metadata, story)
 
-        # 6. Assemble main video (1080p, 20min)
+        # 6. Assemble main video
         video_path = assemble_documentary_video(audio_path, image_paths, video_clips, metadata, story)
 
         # 7. Assemble Shorts
@@ -1607,31 +1604,32 @@ def run_pipeline():
             except Exception as e:
                 print(f"⚠️ Shorts assembly failed: {e}")
 
-        # 8. Upload main + short
-        video_id  = upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False)
+        # 8. Upload with correct language metadata
+        video_id  = upload_to_youtube(video_path, thumbnail_path, metadata,
+                                       is_short=False, language=lang)
         shorts_id = None
         if shorts_path:
             try:
-                shorts_id = upload_to_youtube(shorts_path, None, metadata, is_short=True)
+                shorts_id = upload_to_youtube(shorts_path, None, metadata,
+                                               is_short=True, language=lang)
             except Exception as e:
                 print(f"⚠️ Shorts upload failed: {e}")
 
-        # 9. Update history
-        keywords = [story["title"].lower().split()[0]] if story["title"] else []
-        update_history(metadata["title"], topic, keywords)
+        # 9. Update history (only for English to avoid cross-language duplicates)
+        if lang == "en":
+            keywords = [story["title"].lower().split()[0]] if story["title"] else []
+            update_history(metadata["title"], topic, keywords)
 
         print("\n"+"="*55)
         print("🎉 SUCCESS!")
+        print(f"🌐 Language : {lang_name}")
         print(f"📺 Main:  https://youtube.com/watch?v={video_id}")
         print(f"🎬 Studio: https://studio.youtube.com/video/{video_id}/edit")
-        print("⏳ NOTE: YouTube takes 30min–4hrs to process 1080p.")
-        print("   Check YouTube Studio → Content tab immediately.")
         if shorts_id:
             print(f"📱 Short: https://youtube.com/watch?v={shorts_id}")
         print(f"📊 Title : {metadata.get('title')}")
         print(f"🎭 Style : Thumbnail style {metadata.get('thumbnail_style','1')}")
-        print(f"🎤 Voice : edge-tts ({config.TTS_VOICE})")
-        print(f"📐 Res   : {config.VIDEO_WIDTH}x{config.VIDEO_HEIGHT} @ {config.VIDEO_FPS}fps")
+        print(f"🎤 Voice : edge-tts ({voice})")
         print("="*55)
 
     except Exception as e:
