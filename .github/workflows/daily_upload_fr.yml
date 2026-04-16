@@ -2,8 +2,7 @@ name: Archive of Enigmas - French (Daily)
 
 on:
   schedule:
-    - cron: '30 2 * * *'   # 8:00 AM IST
-    - cron: '30 11 * * *'   # 5:00 PM IST
+    - cron: '0 3 * * *'   # 8:30 AM IST / 5:00 AM CEST — morning FR audience
   workflow_dispatch:
 
 jobs:
