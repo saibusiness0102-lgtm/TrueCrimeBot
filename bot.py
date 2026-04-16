@@ -644,7 +644,7 @@ WRITING RULES:
 
 Then:
 ---METADATA---
-TITLE: (Clickbait but accurate, under 70 chars — emotionally charged, NOT similar to: {recent_titles_str})
+TITLE: (Under 70 chars. MUST include the real name of the victim OR suspect. MUST include a location or year if known. Emotionally charged. Example formats: "The [City] Mom Who Poisoned Her Own Kids", "How [Name] Got Away With Murder For 20 Years". NOT similar to: {recent_titles_str})
 DESCRIPTION: (400 word SEO-rich description. Include: what happened, why it matters, keywords, timestamps teaser)
 TAGS: (30 tags comma-separated — mix of broad and niche true crime terms)
 THUMBNAIL_TEXT: (3-5 shocking all-caps words for thumbnail — e.g. "SHE KNEW TOO MUCH")
@@ -739,7 +739,18 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
 
 © {config.CHANNEL_NAME} — Educational purposes only. All content based on public records."""
 
-    metadata["tags_list"] = [t.strip() for t in metadata["tags"].split(",")][:30]
+    # Auto-inject location + year tags for better SEO discoverability
+    import re as _re
+    year_matches = _re.findall(r'\b(19|20)\d{2}\b', story.get("content", "") + story.get("title", ""))
+    year_tags    = [y for y in dict.fromkeys(year_matches)][:2]          # up to 2 unique years
+    # Pull capitalised words likely to be place names (2+ consecutive caps words)
+    place_matches = _re.findall(r'\b([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?)', story.get("title",""))
+    place_tags    = [p for p in place_matches if p not in ("The","She","He","They","What","Who","How","Why")][:3]
+    raw_tags      = [t.strip() for t in metadata["tags"].split(",")]
+    bonus_tags    = ([f"true crime {y}" for y in year_tags] +
+                     [f"{p} crime" for p in place_tags] +
+                     [f"{p} murder" for p in place_tags])
+    metadata["tags_list"] = (raw_tags + bonus_tags)[:35]   # YouTube allows up to 500 chars total
     wc = len(script.split())
     print(f"✅ Main script: {wc} words (~{wc//150} mins)")
     print(f"✅ Shorts script: {len(shorts_script.split())} words")
@@ -816,12 +827,14 @@ Translate the values to {lang_name}. Return valid JSON only."""
 ⏱️ CHAPTERS:
 {chapters}
 
-🔔 Subscribe → {config.CHANNEL_HANDLE}
-👍 Like  💬 Comment  🔕 Notifications
+🔔 Subscribe for daily true crime → {config.CHANNEL_HANDLE}
+👍 Like if this gave you chills
+💬 Drop your theory below — we read every comment!
+🔕 Turn on notifications so you never miss a case
 
 {hashtags}
 
-© {config.CHANNEL_NAME} — Educational purposes only."""
+© {config.CHANNEL_NAME} — Educational purposes only. All content based on public records."""
 
     except Exception as e:
         print(f"  ⚠️ Metadata translation parse failed: {e} — using English metadata")
@@ -1569,9 +1582,19 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         tmpl       = random.choice(config.PINNED_COMMENT_TEMPLATES)
         pinned_msg = tmpl.format(question=pinned, handle=config.CHANNEL_HANDLE)
         try:
-            yt.commentThreads().insert(
+            thread = yt.commentThreads().insert(
                 part="snippet",
                 body={"snippet":{"videoId":vid,"topLevelComment":{"snippet":{"textOriginal":pinned_msg}}}}).execute()
+            comment_id = thread["snippet"]["topLevelComment"]["id"]
+            # Pin it so it's always top
+            try:
+                yt.comments().setModerationStatus(
+                    id=comment_id,
+                    moderationStatus="published",
+                    banAuthor=False
+                ).execute()
+            except Exception:
+                pass  # pinning needs extra OAuth scope; gracefully skip if unavailable
             print("✅ Pinned comment posted!")
         except Exception as e:
             print(f"⚠️ Comment: {e}")
