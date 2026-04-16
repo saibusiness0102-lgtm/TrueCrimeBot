@@ -575,21 +575,28 @@ import time as _time
 def groq_create_with_retry(client, max_retries=6, **kwargs):
     """
     Drop-in wrapper for client.chat.completions.create that automatically
-    retries on 429 RateLimitError, sleeping exactly as long as Groq asks.
-    Falls back to exponential backoff if the wait time can't be parsed.
+    retries on 429 RateLimitError.
+    - TPM (per-minute) limit: sleeps the exact wait time Groq reports, retries up to max_retries.
+    - TPD (per-day)    limit: exits immediately — no point burning Actions minutes waiting 2+ hrs.
     """
     from groq import RateLimitError
     for attempt in range(max_retries):
         try:
             return client.chat.completions.create(**kwargs)
         except RateLimitError as e:
+            err_str = str(e)
+            # Daily quota exhausted — bail immediately, not retryable within this run
+            if "tokens per day" in err_str or "TPD" in err_str:
+                print("🚫 Groq daily token quota (100k TPD) exhausted.")
+                print("   ➡  Upgrade at https://console.groq.com/settings/billing")
+                print("   ⏭  Skipping today's run — will retry tomorrow.")
+                sys.exit(0)   # exit 0 so GitHub Actions doesn't flag as failure
             if attempt == max_retries - 1:
                 raise
-            # Try to parse "Please try again in X.XXs" from the error message
-            wait = None
-            match = re.search(r'try again in ([\d.]+)s', str(e))
+            # TPM (per-minute) — parse exact wait from error message
+            match = re.search(r'try again in ([\d.]+)s', err_str)
             if match:
-                wait = float(match.group(1)) + 2  # small buffer
+                wait = float(match.group(1)) + 2   # small buffer
             else:
                 wait = min(5 * 2 ** attempt, 120)  # exponential backoff, cap 2 min
             print(f"  ⏳ Rate limit hit — waiting {wait:.1f}s then retrying "
