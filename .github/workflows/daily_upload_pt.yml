@@ -2,8 +2,7 @@ name: Archive of Enigmas - Portuguese (Daily)
 
 on:
   schedule:
-    - cron: '30 16 * * *'   # 10:00 PM IST
-    - cron: '30 7 * * *'   # 1:00 PM IST
+    - cron: '0 9 * * *'   # 2:30 PM IST / 10:00 AM BRT — morning PT audience
   workflow_dispatch:
 
 jobs:
