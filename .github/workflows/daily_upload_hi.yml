@@ -2,12 +2,11 @@ name: Archive of Enigmas - Hindi (Daily)
 
 on:
   schedule:
-    - cron: '30 0 * * *'   # 6:00 AM IST
-    - cron: '30 9 * * *'   # 3:00 PM IST
+    - cron: '0 1 * * *'   # 6:30 AM IST — morning prime time for IN audience
   workflow_dispatch:
 
 jobs:
-  upload-hi:
+  upload-hindi:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -40,6 +39,12 @@ jobs:
 
       - run: pip install --upgrade pip -q && pip install -r requirements.txt -q
 
+      - uses: actions/cache@v4
+        with:
+          path: upload_history.json
+          key: upload-history-${{ github.run_id }}
+          restore-keys: upload-history-
+
       - name: Run Bot (Hindi)
         env:
           BOT_LANGUAGE:            "hi"
@@ -55,3 +60,9 @@ jobs:
       - name: Cleanup
         if: always()
         run: rm -rf output/images output/videos output/voiceover*.mp3 output/bgmusic.mp3 output/edge_chunk_*.mp3 || true
+
+      - uses: actions/cache@v4
+        if: always()
+        with:
+          path: upload_history.json
+          key: upload-history-${{ github.run_id }}
