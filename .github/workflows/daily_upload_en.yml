@@ -2,8 +2,7 @@ name: Archive of Enigmas - English (Daily)
 
 on:
   schedule:
-    - cron: '30 12 * * *'   # 6:00 PM IST
-    - cron: '30 3 * * *'    # 9:00 AM IST
+    - cron: '0 5 * * *'   # 10:30 AM IST / 5:00 AM EDT — morning EN audience
   workflow_dispatch:
 
 jobs:
