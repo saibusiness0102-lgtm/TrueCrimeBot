@@ -2,8 +2,7 @@ name: Archive of Enigmas - Spanish (Daily)
 
 on:
   schedule:
-    - cron: '30 14 * * *'   # 8:00 PM IST
-    - cron: '30 5 * * *'   # 11:00 AM IST
+    - cron: '0 7 * * *'   # 12:30 PM IST / 9:00 AM CEST — morning ES audience
   workflow_dispatch:
 
 jobs:
