@@ -1,13 +1,10 @@
 # ============================================================
-# ARCHIVE OF ENIGMAS — config.py  (v10 MONETIZATION EDITION)
-# Top-5 language strategy for fastest path to YouTube monetisation
+# ARCHIVE OF ENIGMAS — config.py  (v11 GROWTH EDITION)
+# FIXES: English-only by default, Wikipedia-first, font download,
+#        better thumbnail hooks, updated music URLs
 # ============================================================
 
 import os
-
-# ============================================================
-# API KEYS  (set as GitHub Secrets / env vars — never hardcode)
-# ============================================================
 
 GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL     = "llama-3.3-70b-versatile"
@@ -15,69 +12,41 @@ GROQ_MODEL     = "llama-3.3-70b-versatile"
 PEXELS_API_KEY  = os.environ.get("PEXELS_API_KEY", "")
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "")
 
-# YouTube OAuth (JSON string stored as GitHub Secret)
 YOUTUBE_CLIENT_SECRETS = os.environ.get("YOUTUBE_CLIENT_SECRETS", "")
 YOUTUBE_TOKEN          = os.environ.get("YOUTUBE_TOKEN", "")
-
-
-# ============================================================
-# VOICE — edge-tts (FREE Microsoft Neural, no API key needed)
-# ============================================================
 
 TTS_VOICE  = "en-US-ChristopherNeural"
 TTS_RATE   = "-5%"
 TTS_VOLUME = "+0%"
-
-
-# ============================================================
-# VIDEO QUALITY — 1080p / 24fps cinematic
-# ============================================================
 
 VIDEO_WIDTH   = 1920
 VIDEO_HEIGHT  = 1080
 VIDEO_FPS     = 24
 VIDEO_BITRATE = "8000k"
 
-
-# ============================================================
-# THUMBNAIL SETTINGS
-# ============================================================
-
 THUMBNAIL_WIDTH  = 1280
 THUMBNAIL_HEIGHT = 720
 THUMBNAIL_STYLES = ["1", "2", "3", "4"]
 
-
-# ============================================================
-# CHANNEL BRANDING
-# ============================================================
+# FIX v11: Bot auto-downloads Bebas Neue (impact-style) for thumbnails
+BEBAS_NEUE_URL = (
+    "https://github.com/dharmatype/Bebas-Neue/raw/master/fonts/BebasNeue(2019)by_Dharma_Type/otf/BebasNeue-Regular.otf"
+)
+FONT_CACHE_PATH = "/tmp/BebasNeue.otf"
 
 CHANNEL_NAME     = "Archive of Enigmas"
 CHANNEL_HANDLE   = "@Archive-of-Enigmas-04"
 OUTPUT_FOLDER    = "output"
-PREFER_WIKIPEDIA = False
+
+# FIX v11: MUST be True — RSS pulls multilingual stories which breaks the algorithm
+PREFER_WIKIPEDIA = True
 
 WATERMARK_TEXT    = "Archive of Enigmas"
 WATERMARK_OPACITY = 0.35
 
-
-# ============================================================
-# SHORTS SETTINGS
-# ============================================================
-
-SHORTS_TARGET_DURATION = 58   # Keep under 60s for YouTube Shorts boost
-
-
-# ============================================================
-# DIVERSITY GUARD
-# ============================================================
+SHORTS_TARGET_DURATION = 58
 
 MAX_SAME_TOPIC_IN_5 = 1
-
-
-# ============================================================
-# HASHTAGS  — Peak SEO, Viral-Optimised
-# ============================================================
 
 BASE_HASHTAGS = [
     "#TrueCrime", "#UnsolvedMysteries", "#TrueCrimeStories",
@@ -115,33 +84,15 @@ TRENDING_HASHTAGS = [
     "#CrimeAlert", "#JusticeForVictims", "#ShockingCase",
 ]
 
-
-# ============================================================
-# PINNED COMMENT TEMPLATES
-# ============================================================
-
+# FIX v11: More debate-sparking pinned comment templates
 PINNED_COMMENT_TEMPLATES = [
-    "🔴 QUESTION FOR YOU: {question}\n\nDrop your theory below 👇 We read EVERY comment!\n\nFollow us → {handle}",
-    "💬 COMMUNITY POLL: {question}\n\nComment A or B — let's see what you think!\n📺 More cases → {handle}",
-    "🕵️ DETECTIVE CHALLENGE: {question}\n\nShare your theory in the comments. Best answer gets pinned! 🏆\n🔔 {handle}",
-    "⚠️ VIEWER DEBATE: {question}\n\nAgree or disagree? COMMENT BELOW — this case divided millions.\n{handle}",
-    "🧩 UNSOLVED ANGLE: {question}\n\nWe think the truth is darker. What about you? 👇\nSubscribe for more → {handle}",
+    "🔴 DEBATE THIS: {question}\n\nComment A or B 👇 We read EVERY single one.\n\n📺 More cases → {handle}",
+    "💬 HOT TAKE: {question}\n\nDrop your theory — we'll pin the best one! 🏆\n🔔 {handle}",
+    "🕵️ DETECTIVE CHALLENGE: {question}\n\nShare your theory below. Best answer gets pinned! 🏆\n🔕 {handle}",
+    "⚠️ CONTROVERSIAL: {question}\n\nAgree or disagree? COMMENT BELOW — this case divided millions.\n{handle}",
+    "🧩 WE THINK THE POLICE GOT IT WRONG: {question}\n\nWhat do YOU think? 👇\n→ {handle}",
+    "🔥 UNPOPULAR OPINION: {question}\n\nDo you agree? Drop your take — we respond to every comment.\n{handle}",
 ]
-
-
-# ============================================================
-# TOP-5 LANGUAGE STRATEGY FOR MONETISATION
-# ============================================================
-# Priority order is based on YouTube audience size and CPM rates:
-#   1. English (en)  — highest CPM, global reach ✅ already running
-#   2. Spanish (es)  — 500M+ speakers, #2 YouTube language globally
-#   3. Portuguese (pt) — Brazil is TOP-3 YouTube market worldwide
-#   4. Hindi (hi)    — 1.4B market, fastest-growing YouTube audience
-#   5. French (fr)   — France + 29 Francophone countries, high CPM
-#
-# German and Japanese are smaller audiences and take longer to monetise.
-# Removed from priority list. Re-add once monetised in top-5.
-# ============================================================
 
 SUPPORTED_LANGUAGES = {
     "en": {
@@ -158,7 +109,7 @@ SUPPORTED_LANGUAGES = {
         "rate": "-3%",
         "audience": "ES, MX, AR, CO, CL",
         "subscribers_target": "Latin America + Spain",
-        "hashtag_suffix": " #CrimenReal #MisterioVerdadero #CasosCriminales #CrimenesReales",
+        "hashtag_suffix": " #CrimenReal #MisterioVerdadero #CasosCriminales #CrimesReales",
     },
     "pt": {
         "name": "Portuguese",
@@ -184,28 +135,21 @@ SUPPORTED_LANGUAGES = {
         "subscribers_target": "France + Francophone",
         "hashtag_suffix": " #CrimeVrai #Mystere #AffaireCriminelle #CrimesReels",
     },
-    # Keep but deprioritised — add separate workflows later once monetised
-    "de": {
-        "name": "German",
-        "voice": "de-DE-ConradNeural",
-        "rate": "-4%",
-        "audience": "DE, AT, CH",
-        "subscribers_target": "DACH Region",
-        "hashtag_suffix": " #EchteKrimis #UngeloesterFall #Kriminalfall",
-    },
-    "ja": {
-        "name": "Japanese",
-        "voice": "ja-JP-KeitaNeural",
-        "rate": "-5%",
-        "audience": "JP",
-        "subscribers_target": "Japan",
-        "hashtag_suffix": " #TrueCrimeJapan #MysteryJapan #CriminalCase",
-    },
 }
 
-# Primary language — always uploaded by the main workflow
 PRIMARY_LANGUAGE = "en"
+EXTRA_LANGUAGES  = ["es", "pt", "hi", "fr"]   # use ONLY with separate channels per language
 
-# Languages with dedicated workflows (each runs in its own GitHub Actions job)
-# Managed via BOT_LANGUAGE env var in each workflow file
-EXTRA_LANGUAGES = ["es", "pt", "hi", "fr"]   # for documentation/reference only
+# Title formats that perform well — used in prompt examples
+HIGH_PERFORMING_TITLE_FORMATS = [
+    "The [City] [Crime] That Shocked the Nation",
+    "How [Name] Killed [N] People and Almost Got Away With It",
+    "The Disturbing Truth Behind the [Name] Case",
+    "She Vanished in [Year]. No One Looked For Her.",
+    "[Name]: The Serial Killer Your Town Forgot",
+    "The [N]-Year-Old Cold Case Police Still Can't Solve",
+    "He Confessed to [N] Murders. They Only Charged Him With One.",
+    "What Really Happened to [Name]?",
+    "The [Profession] Who Led a Double Life as a [Crime]",
+    "Inside the [N]-Day Manhunt That Captivated a Nation",
+]
