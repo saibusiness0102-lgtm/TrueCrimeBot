@@ -1,7 +1,13 @@
 # ============================================
-# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v9 FIXED
-# 20-min videos | 1080p | Multi-Language | Peak SEO
-# Fixes: language pipeline, repeated thumbnails, RSS filtering
+# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v11 GROWTH
+# 20-min videos | 1080p | English-First | Peak SEO
+# Fixes v11:
+#   - Wikipedia-first (no more multilingual RSS stories)
+#   - Bebas Neue font download for viral thumbnails
+#   - Stronger title prompt with proven formats
+#   - Working background music URLs
+#   - Better Wikipedia case list (more viral/trending cases)
+#   - Upload history tracked across ALL languages
 # ============================================
 
 import os
@@ -33,6 +39,29 @@ if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
 
 # ============================================
+# v11 FIX: FONT DOWNLOAD — Bebas Neue for viral thumbnails
+# LiberationSans looks generic; Bebas Neue looks like Netflix/crime docs
+# ============================================
+
+def ensure_bebas_font():
+    """Download Bebas Neue once per run and cache it at FONT_CACHE_PATH."""
+    import urllib.request
+    path = config.FONT_CACHE_PATH
+    if os.path.exists(path) and os.path.getsize(path) > 10000:
+        return path
+    try:
+        print("  🔤 Downloading Bebas Neue font...")
+        urllib.request.urlretrieve(config.BEBAS_NEUE_URL, path)
+        if os.path.getsize(path) > 10000:
+            print("  ✅ Bebas Neue downloaded!")
+            return path
+    except Exception as e:
+        print(f"  ⚠️ Font download failed ({e}), using fallback")
+    return None
+
+BEBAS_FONT_PATH = None   # set on first run in run_pipeline()
+
+# ============================================
 # TITLE & TOPIC DIVERSITY GUARD
 # ============================================
 
@@ -51,9 +80,11 @@ def save_history(h):
     with open(HISTORY_FILE, "w") as f:
         json.dump(h, f, indent=2)
 
-def update_history(title, topic_type, keywords):
+def update_history(title, topic_type, keywords, lang="en"):
     h = load_history()
-    h["recent_titles"]   = ([title] + h["recent_titles"])[:20]
+    # v11 FIX: Track history for ALL languages to prevent cross-language duplicates
+    entry = f"[{lang.upper()}] {title}"
+    h["recent_titles"]   = ([entry] + h["recent_titles"])[:20]
     h["recent_topics"]   = ([topic_type] + h["recent_topics"])[:10]
     h["recent_keywords"] = (keywords + h["recent_keywords"])[:30]
     save_history(h)
@@ -165,50 +196,64 @@ def fetch_from_wikipedia():
     h = load_history()
     used_keywords = set(h.get("recent_keywords", []))
     cases = [
+        # ── Classic Serial Killers ────────────────────────────────────
         "Zodiac Killer","Jack the Ripper","Golden State Killer","Ted Bundy",
         "Jeffrey Dahmer","John Wayne Gacy","BTK killer","Gary Ridgway",
         "Samuel Little","Ed Kemper","Richard Ramirez","Dean Corll",
         "Andrei Chikatilo","Aileen Wuornos","Harold Shipman","H. H. Holmes",
         "Charles Manson","Pedro Lopez","Luis Garavito","John Edward Robinson",
+        "Israel Keyes","Randy Kraft","Gerard Schaefer","Dennis Nilsen",
+        "Peter Sutcliffe","Robert Pickton","Paul Bernardo","Herb Baumeister",
+        # ── Viral True Crime (high YouTube search volume) ────────────
+        "Chris Watts murders","JonBenet Ramsey","Gabby Petito case",
+        "Delphi murders","Amanda Knox","Steven Avery","Scott Peterson case",
+        "Menendez brothers","Pamela Smart","Robert Durst",
+        "Phil Spector murder","Oscar Pistorius trial","West Memphis Three",
+        "Making a Murderer","OJ Simpson trial","Casey Anthony trial",
+        "Drew Peterson","Murder of Meredith Kercher",
+        "Watts family murders","Brian Laundrie","Rust film set shooting",
+        "Alex Murdaugh murders","Chad Daybell murders",
+        "Murder of Laci Peterson","Shayna Hubers case",
+        "Kyle Unger wrongful conviction","Kevin Cooper case",
+        "Adnan Syed case","Serial podcast murder",
+        # ── Cold Cases & Mysteries ────────────────────────────────────
         "Black Dahlia murder","Villisca axe murders","Hinterkaifeck murders",
         "Axeman of New Orleans","Cleveland torso murderer","Lizzie Borden",
-        "Chris Watts murders","JonBenet Ramsey","Tylenol murders",
-        "West Memphis Three","Delphi murders","OJ Simpson trial",
-        "Amanda Knox","Steven Avery","Scott Peterson case",
-        "Menendez brothers","Pamela Smart","Drew Peterson",
-        "Robert Durst","Phil Spector murder","Oscar Pistorius trial",
-        "Murder of Meredith Kercher","Yvonne Fletcher murder",
-        "Khairlanji massacre","Nithari killings","Priyadarshini Mattoo case",
-        "Bhanwari Devi murder case","Jessica Lal murder case",
-        "Aarushi Talwar murder case","Sheena Bora murder case",
-        "Bijal Joshi rape case","Nirbhaya case","Unnao rape case",
-        "Kathua rape case","Hathras case","Budaun murders India",
-        "Rohtak honour killing India","Manoj Babli honour killing",
-        "Ilavarasan death case Tamil Nadu","Thangjam Manorama case",
-        "Bernie Madoff Ponzi scheme","Enron scandal","WorldCom fraud",
-        "Elizabeth Holmes Theranos","Anna Sorokin fraud","Frank Abagnale",
-        "Satyam scandal India","2G spectrum scam India","Harshad Mehta scam",
-        "Vijay Mallya fraud","Nirav Modi diamond fraud","Subrata Roy fraud",
-        "Jaycee Dugard kidnapping","Elizabeth Smart kidnapping",
-        "Ariel Castro kidnappings","Natascha Kampusch kidnapping",
-        "Patty Hearst kidnapping","Lindbergh kidnapping",
-        "Getty kidnapping 1973","Frank Sinatra Jr kidnapping",
-        "Alexander Litvinenko poisoning","Salisbury Novichok attack",
-        "Georgi Markov assassination","Graham Young poisoner",
-        "Marie Besnard poison murders","Nannie Doss poisoner",
+        "Tylenol murders","Tamam Shud case","Dyatlov Pass incident",
+        "Isdal Woman","Beaumont children disappearance","Sodder children disappearance",
+        "Elisa Lam case","Max Headroom broadcast intrusion",
+        "Boy in the box Philadelphia","Zodiac ciphers",
+        "Marilyn Monroe death","Babushka Lady assassination",
+        "Paige Rouse disappearance","Maura Murray disappearance",
+        "Springfield Three disappearance","Doe Network case",
+        "Asha Degree disappearance","Brandon Lawson case",
+        # ── Cults & Conspiracies ──────────────────────────────────────
         "Jonestown massacre","Heaven's Gate cult","NXIVM cult",
         "Aum Shinrikyo","Branch Davidians Waco","The Family cult Australia",
         "Order of the Solar Temple","Rajneeshee bioterror attack",
+        "Children of God cult","Peoples Temple","The Ant Hill Kids",
+        # ── Famous Heists ─────────────────────────────────────────────
         "DB Cooper","Isabella Stewart Gardner Museum theft",
         "Great Train Robbery 1963","Antwerp diamond heist",
         "Hatton Garden heist","Banco Central Brazil robbery",
         "Dunbar Armored robbery","Lufthansa heist 1978",
-        "Tamam Shud case","Dyatlov Pass incident","Isdal Woman",
-        "Beaumont children disappearance","Sodder children disappearance",
-        "Zodiac ciphers","Marilyn Monroe death",
-        "Elisa Lam case","Max Headroom broadcast intrusion",
-        "Boy in the box Philadelphia","Babushka Lady assassination",
-        "Gabby Petito case","Delphi murders cold case",
+        "French Connection drug smuggling","Pink Panthers jewel thieves",
+        # ── Fraud & White Collar ──────────────────────────────────────
+        "Bernie Madoff Ponzi scheme","Enron scandal",
+        "Elizabeth Holmes Theranos","Anna Sorokin fraud",
+        "Harshad Mehta scam","Vijay Mallya fraud",
+        "Nirav Modi diamond fraud","Frank Abagnale",
+        "Sam Bankman-Fried FTX collapse","WeWork Adam Neumann fraud",
+        "Billy McFarland Fyre Festival","Trevor Milton Nikola fraud",
+        # ── Kidnapping & Captivity ────────────────────────────────────
+        "Jaycee Dugard kidnapping","Elizabeth Smart kidnapping",
+        "Ariel Castro kidnappings","Natascha Kampusch kidnapping",
+        "Patty Hearst kidnapping","Lindbergh kidnapping",
+        "Fritzl case","Colleen Stan captivity","Mary Vincent attack",
+        # ── Poisonings & Assassinations ───────────────────────────────
+        "Alexander Litvinenko poisoning","Salisbury Novichok attack",
+        "Georgi Markov assassination","Graham Young poisoner",
+        "Marie Besnard poison murders","Nannie Doss poisoner",
     ]
     available = [c for c in cases if c.lower() not in used_keywords]
     if not available:
@@ -618,7 +663,10 @@ def generate_script(story, language="en"):
         lang_info = config.SUPPORTED_LANGUAGES.get(language, {})
         lang_instruction = f"\n\nIMPORTANT: Write EVERYTHING (script, title, description, tags, all metadata) in {lang_info.get('name','English')} language."
 
-    prompt = f"""You are the writer for "Archive of Enigmas" — a top true crime YouTube channel.
+    # v11: Load proven title formats from config
+    title_formats = "\n".join(f"  \u2022 {f}" for f in getattr(config, "HIGH_PERFORMING_TITLE_FORMATS", []))
+
+    prompt = f"""You are the head writer for "Archive of Enigmas" — a true crime YouTube channel aiming to go viral.
 Write a COMPLETE 18-22 minute video script (3000+ words) about this case.{lang_instruction}
 
 Story Title: {story['title']}
@@ -628,13 +676,13 @@ RECENT TITLES (DO NOT repeat these patterns): {recent_titles_str}
 
 STRUCTURE (CRITICAL — must hit 3000+ words):
 [HOOK — 90 seconds] Open with the MOST shocking moment. No intro yet. Drop viewer into the action.
-[TEASER] Preview 3 shocking things they'll learn. "Before we begin..." Subscribe reminder.
+[TEASER] Preview 3 shocking things they will learn. Subscribe reminder.
 [CHAPTER 1: THE VICTIM / BACKGROUND — 4 mins] Full scene setting. Who were they? Make viewer care.
   End with cliffhanger question. [PAUSE marker here]
 [CHAPTER 2: THE CRIME — 5 mins] Minute-by-minute breakdown. Maximum tension. Specific details.
   [PAUSE] [POLL TEASER: Ask viewers to comment their theory before continuing]
 [CHAPTER 3: THE INVESTIGATION — 4 mins] Police failures. Key clues. Suspects. Red herrings.
-  [PAUSE] [ENGAGEMENT: "Drop your theory below — who do you think did it?"]
+  [PAUSE] [ENGAGEMENT: Drop your theory below]
 [CHAPTER 4: SHOCKING REVELATIONS — 3 mins] Plot twists. Things nobody expected.
 [CHAPTER 5: AFTERMATH & JUSTICE — 2 mins] What happened next. Sentencing or cold case status.
 [OUTRO — 1 min] Ask 2 engagement questions. Subscribe CTA. Preview next video.
@@ -651,17 +699,26 @@ WRITING RULES:
 
 Then:
 ---METADATA---
-TITLE: (Under 70 chars. MUST include the real name of the victim OR suspect. MUST include a location or year if known. Emotionally charged. Example formats: "The [City] Mom Who Poisoned Her Own Kids", "How [Name] Got Away With Murder For 20 Years". NOT similar to: {recent_titles_str})
+TITLE: (CRITICAL RULES:
+  1. Under 70 characters.
+  2. MUST include a real name (victim OR perpetrator) OR a specific location/year.
+  3. Use ONE of these proven high-CTR formats:
+{title_formats}
+  4. Must create an unanswered question or shocking contrast.
+  5. Must NOT be similar to: {recent_titles_str}
+  6. NO generic phrases like "True Crime Story" or "Dark Case" — be SPECIFIC.
+  BAD title example: "Virginia Horror" — no name, no hook, no specificity.
+  GOOD title example: "The Virginia Mom Who Poisoned Her Family for 3 Years")
 DESCRIPTION: (400 word SEO-rich description. Include: what happened, why it matters, keywords, timestamps teaser)
 TAGS: (30 tags comma-separated — mix of broad and niche true crime terms)
-THUMBNAIL_TEXT: (3-5 shocking all-caps words for thumbnail — e.g. "SHE KNEW TOO MUCH")
+THUMBNAIL_TEXT: (3-5 ALL-CAPS words — shocking, specific, curiosity-gap. NOT generic.
+  BAD: "SHOCKING CASE" | GOOD: "SHE KNEW TOO MUCH" or "KILLER NEXT DOOR" or "13 YEARS MISSING")
 THUMBNAIL_MOOD: (dark/red/split/face)
 THUMBNAIL_STYLE: (1, 2, 3, or 4 — pick best for emotional impact)
-PINNED_COMMENT: (Controversial or intriguing question that drives comments)
+PINNED_COMMENT: (A controversial OR divisive question that sparks debate)
 COMMUNITY_POST: (60-word Community tab post with poll question)
 CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
 """
-
     resp = groq_create_with_retry(
         client,
         model=config.GROQ_MODEL,
@@ -917,10 +974,13 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
 # ============================================
 
 FREE_MUSIC_URLS = [
+    # v11 FIX: Updated working URLs from Pixabay (verified April 2026)
+    "https://cdn.pixabay.com/download/audio/2023/10/09/audio_9488e97a9f.mp3",
     "https://cdn.pixabay.com/download/audio/2022/10/25/audio_946f0a5c40.mp3",
+    "https://cdn.pixabay.com/download/audio/2023/06/12/audio_2b39dde12c.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb749dbac.mp3",
     "https://cdn.pixabay.com/download/audio/2022/08/23/audio_d16737dc28.mp3",
     "https://cdn.pixabay.com/download/audio/2021/11/25/audio_cb31e37bb1.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb749dbac.mp3",
 ]
 
 def fetch_background_music():
@@ -1367,10 +1427,13 @@ def create_thumbnail(image_paths, metadata, story):
 
     FONT_PATH_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     FONT_PATH_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+    # v11 FIX: Use Bebas Neue for headline text if available (looks like Netflix/crime docs)
+    BEBAS_PATH = BEBAS_FONT_PATH or config.FONT_CACHE_PATH
+    HEADLINE_FONT_PATH = BEBAS_PATH if (BEBAS_PATH and os.path.exists(BEBAS_PATH)) else FONT_PATH_BOLD
     try:
         word_count = len(thumb_text.split())
-        hl_size    = 108 if word_count <= 2 else (88 if word_count <= 4 else 72)
-        f_hl  = ImageFont.truetype(FONT_PATH_BOLD, hl_size)
+        hl_size    = 118 if word_count <= 2 else (96 if word_count <= 4 else 80)
+        f_hl  = ImageFont.truetype(HEADLINE_FONT_PATH, hl_size)
         f_lg  = ImageFont.truetype(FONT_PATH_BOLD, 52)
         f_md  = ImageFont.truetype(FONT_PATH_BOLD, 36)
         f_sm  = ImageFont.truetype(FONT_PATH_REG,  26)
@@ -1616,30 +1679,33 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
 # ============================================
 
 def run_pipeline():
-    # FIX: Read language from environment variable
+    global BEBAS_FONT_PATH
+
+    # v11: Read language from environment variable
     lang = os.environ.get("BOT_LANGUAGE", "en").strip().lower()
-    lang_cfg = config.SUPPORTED_LANGUAGES.get(lang, config.SUPPORTED_LANGUAGES["en"])
+    lang_cfg  = config.SUPPORTED_LANGUAGES.get(lang, config.SUPPORTED_LANGUAGES["en"])
     lang_name = lang_cfg.get("name", "English")
-    voice = lang_cfg.get("voice", config.TTS_VOICE)
-    rate  = lang_cfg.get("rate",  config.TTS_RATE)
+    voice     = lang_cfg.get("voice", config.TTS_VOICE)
+    rate      = lang_cfg.get("rate",  config.TTS_RATE)
 
     print("="*55)
-    print(f"🚀 ARCHIVE OF ENIGMAS — Pipeline v9 | Lang: {lang_name}")
+    print(f"🚀 ARCHIVE OF ENIGMAS — Pipeline v11 | Lang: {lang_name}")
     print("="*55)
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
 
+    # v11 FIX: Download Bebas Neue font once per run for better thumbnails
+    BEBAS_FONT_PATH = ensure_bebas_font()
+
     try:
-        # 1. Fetch story (always in English from sources)
+        # 1. Fetch story (Wikipedia = English guaranteed)
         story = fetch_story()
-        topic = story.get("topic","other")
+        topic = story.get("topic", "other")
         print(f"  📌 Topic: {topic} | Language: {lang_name}")
 
         # 2. Generate script
         if lang == "en":
-            # Generate directly in English
             script, shorts_script, metadata = generate_script(story, language="en")
         else:
-            # FIX: Generate English first, then translate with proper metadata update
             print(f"  🌐 Generating English base, then translating to {lang_name}...")
             script, shorts_script, metadata = generate_script(story, language="en")
             script, shorts_script, metadata = translate_script(script, shorts_script, metadata, lang)
@@ -1661,7 +1727,7 @@ def run_pipeline():
         mixed_audio_path = os.path.join(config.OUTPUT_FOLDER, f"voiceover_{lang}_mixed.mp3")
         audio_path       = mix_audio_with_music(audio_path, music_path, mixed_audio_path)
 
-        # 5. Thumbnail (story-seeded, no repeats)
+        # 5. Thumbnail (story-seeded, no repeats, Bebas Neue font)
         thumbnail_path = create_thumbnail(image_paths, metadata, story)
 
         # 6. Assemble main video
@@ -1676,8 +1742,8 @@ def run_pipeline():
                 print(f"⚠️ Shorts assembly failed: {e}")
 
         # 8. Upload with correct language metadata
-        video_id  = upload_to_youtube(video_path, thumbnail_path, metadata,
-                                       is_short=False, language=lang)
+        video_id = upload_to_youtube(video_path, thumbnail_path, metadata,
+                                     is_short=False, language=lang)
         if video_id is None:
             print("⏹  Pipeline stopping cleanly — upload limit reached.")
             return
@@ -1685,25 +1751,25 @@ def run_pipeline():
         if shorts_path:
             try:
                 shorts_id = upload_to_youtube(shorts_path, None, metadata,
-                                               is_short=True, language=lang)
+                                              is_short=True, language=lang)
             except Exception as e:
                 print(f"⚠️ Shorts upload failed: {e}")
 
-        # 9. Update history (only for English to avoid cross-language duplicates)
-        if lang == "en":
-            keywords = [story["title"].lower().split()[0]] if story["title"] else []
-            update_history(metadata["title"], topic, keywords)
+        # 9. v11 FIX: Update history for ALL languages (prevents cross-language topic duplicates)
+        keywords = [story["title"].lower().split()[0]] if story["title"] else []
+        update_history(metadata["title"], topic, keywords, lang=lang)
 
-        print("\n"+"="*55)
+        print("\n" + "="*55)
         print("🎉 SUCCESS!")
-        print(f"🌐 Language : {lang_name}")
-        print(f"📺 Main:  https://youtube.com/watch?v={video_id}")
-        print(f"🎬 Studio: https://studio.youtube.com/video/{video_id}/edit")
+        print(f"🌐 Language  : {lang_name}")
+        print(f"📺 Main    : https://youtube.com/watch?v={video_id}")
+        print(f"🎬 Studio  : https://studio.youtube.com/video/{video_id}/edit")
         if shorts_id:
-            print(f"📱 Short: https://youtube.com/watch?v={shorts_id}")
-        print(f"📊 Title : {metadata.get('title')}")
-        print(f"🎭 Style : Thumbnail style {metadata.get('thumbnail_style','1')}")
-        print(f"🎤 Voice : edge-tts ({voice})")
+            print(f"📱 Short   : https://youtube.com/watch?v={shorts_id}")
+        print(f"📊 Title   : {metadata.get('title')}")
+        print(f"🎭 Style   : Thumbnail style {metadata.get('thumbnail_style','1')}")
+        print(f"🔤 Font    : {'Bebas Neue' if BEBAS_FONT_PATH else 'LiberationSans (fallback)'}")
+        print(f"🎤 Voice   : edge-tts ({voice})")
         print("="*55)
 
     except Exception as e:
@@ -1714,3 +1780,4 @@ def run_pipeline():
 
 if __name__ == "__main__":
     run_pipeline()
+
