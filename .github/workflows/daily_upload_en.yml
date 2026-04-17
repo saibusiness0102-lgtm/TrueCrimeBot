@@ -2,7 +2,9 @@ name: Archive of Enigmas - English (Daily)
 
 on:
   schedule:
-    - cron: '0 5 * * *'   # 10:30 AM IST / 5:00 AM EDT — morning EN audience
+    # v11: Post at 14:00 UTC = 2 PM EST / 9:30 PM IST
+    # Research shows true crime audience peaks on YouTube between 2-4 PM EST
+    - cron: '0 14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -39,11 +41,13 @@ jobs:
 
       - run: pip install --upgrade pip -q && pip install -r requirements.txt -q
 
+      # v11 FIX: Persistent upload history using GitHub Actions cache
+      # The cache key changes each run so new run always saves fresh history
       - uses: actions/cache@v4
         with:
           path: upload_history.json
-          key: upload-history-${{ github.run_id }}
-          restore-keys: upload-history-
+          key: upload-history-en-${{ github.run_id }}
+          restore-keys: upload-history-en-
 
       - name: Run Bot (English)
         env:
@@ -65,4 +69,4 @@ jobs:
         if: always()
         with:
           path: upload_history.json
-          key: upload-history-${{ github.run_id }}
+          key: upload-history-en-${{ github.run_id }}
