@@ -1,12 +1,22 @@
 name: Archive of Enigmas - Hindi (Daily)
 
+# ── IMPORTANT: Repo must be PUBLIC for unlimited free Actions minutes ─────────
+# Private repos = 2,000 min/month free. 4 languages × 150 min = exhausted in 3 days.
+# Make it public: Settings → Danger Zone → Change repository visibility → Make public
+# Your API keys / YouTube tokens in GitHub Secrets remain private regardless.
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
   schedule:
-    - cron: '0 1 * * *'   # 6:30 AM IST — morning prime time for IN audience
+    # 8:30 AM IST — morning Indian audience peak
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  upload-hindi:
+  upload-hi:
     runs-on: ubuntu-latest
     timeout-minutes: 150
     steps:
@@ -42,8 +52,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: upload_history.json
-          key: upload-history-${{ github.run_id }}
-          restore-keys: upload-history-
+          key: upload-history-hi-${{ github.run_id }}
+          restore-keys: upload-history-hi-
 
       - name: Run Bot (Hindi)
         env:
@@ -59,10 +69,10 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: rm -rf output/images output/videos output/voiceover*.mp3 output/bgmusic.mp3 output/edge_chunk_*.mp3 || true
+        run: rm -rf output/images output/videos output/voiceover*.mp3 output/edge_chunk_*.mp3 || true
 
       - uses: actions/cache@v4
         if: always()
         with:
           path: upload_history.json
-          key: upload-history-${{ github.run_id }}
+          key: upload-history-hi-${{ github.run_id }}
