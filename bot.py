@@ -973,57 +973,24 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
 # STEP 6b — BACKGROUND MUSIC
 # ============================================
 
-FREE_MUSIC_URLS = [
-    # v11 FIX: Updated working URLs from Pixabay (verified April 2026)
-    "https://cdn.pixabay.com/download/audio/2023/10/09/audio_9488e97a9f.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/10/25/audio_946f0a5c40.mp3",
-    "https://cdn.pixabay.com/download/audio/2023/06/12/audio_2b39dde12c.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb749dbac.mp3",
-    "https://cdn.pixabay.com/download/audio/2022/08/23/audio_d16737dc28.mp3",
-    "https://cdn.pixabay.com/download/audio/2021/11/25/audio_cb31e37bb1.mp3",
-]
+# ============================================
+# v12 COPYRIGHT FIX: Background music DISABLED
+# ============================================
+# WHY: Every Pixabay/CDN URL — even "free" tracks — can carry a
+# YouTube Content ID claim that mutes or demonetises your video.
+# Voice-only is the default used by top true crime channels.
+# To add music later: use ONLY YouTube Audio Library tracks
+# (studio.youtube.com > Audio Library) — pre-cleared for YT.
+# ============================================
 
 def fetch_background_music():
-    print("\n🎵 Fetching background music...")
-    music_path = os.path.join(config.OUTPUT_FOLDER, "bgmusic.mp3")
-    if os.path.exists(music_path) and os.path.getsize(music_path) > 50000:
-        print("  ✅ Using cached music")
-        return music_path
-
-    random.shuffle(FREE_MUSIC_URLS)
-    for url in FREE_MUSIC_URLS:
-        try:
-            r = requests.get(url, timeout=20, stream=True)
-            if r.status_code == 200:
-                with open(music_path, "wb") as f:
-                    for chunk in r.iter_content(8192): f.write(chunk)
-                if os.path.getsize(music_path) > 50000:
-                    print("  ✅ Background music downloaded!")
-                    return music_path
-        except Exception as e:
-            print(f"  ⚠️ Music fetch: {e}")
+    print("\n🎵 Background music: DISABLED (copyright protection)")
     return None
 
 def mix_audio_with_music(voice_path, music_path, output_path):
-    if not music_path or not os.path.exists(music_path):
-        return voice_path
-    try:
-        voice = AudioFileClip(voice_path)
-        music = AudioFileClip(music_path)
-        if music.duration < voice.duration:
-            loops = int(math.ceil(voice.duration / music.duration)) + 1
-            music = concatenate_audioclips([music] * loops)
-        music = music.subclip(0, voice.duration)
-        music = music.audio_fadein(3).audio_fadeout(5)
-        music = music.volumex(0.10)
-        final_audio = CompositeAudioClip([voice, music])
-        final_audio.write_audiofile(output_path, fps=44100, logger=None)
-        voice.close(); music.close()
-        print("  ✅ Audio mixed!")
-        return output_path
-    except Exception as e:
-        print(f"  ⚠️ Mix failed: {e} — voice only")
-        return voice_path
+    # Always return voice-only — safe from Content ID claims
+    print("  🎙️ Voice-only audio (copyright safe)")
+    return voice_path
 
 
 # ============================================
