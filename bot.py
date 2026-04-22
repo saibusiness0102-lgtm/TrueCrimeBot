@@ -652,114 +652,173 @@ def groq_create_with_retry(client, max_retries=6, **kwargs):
 # ============================================
 
 def generate_script(story, language="en"):
-    print(f"\n✍️  Step 5: Generating scripts ({language.upper()})...")
+    """
+    v13 FIX: Chunked generation — each chapter is a SEPARATE Groq call.
+    This prevents token-rate-limit truncation that was producing 4-8 min videos.
+    Each call is ~1500 tokens output max, well under Groq free-tier limits.
+    Total script: 5 chapters × ~600 words = 3000+ words → 18-22 min video.
+    """
+    print(f"\n✍️  Step 5: Generating chunked script ({language.upper()})...")
     h = load_history()
     recent_titles_str = ", ".join(h["recent_titles"][:5]) if h["recent_titles"] else "none yet"
-
     client = Groq(api_key=config.GROQ_API_KEY)
 
     lang_instruction = ""
     if language != "en":
         lang_info = config.SUPPORTED_LANGUAGES.get(language, {})
-        lang_instruction = f"\n\nIMPORTANT: Write EVERYTHING (script, title, description, tags, all metadata) in {lang_info.get('name','English')} language."
+        lang_instruction = f"Write in {lang_info.get('name','English')} language."
 
-    # v11: Load proven title formats from config
-    title_formats = "\n".join(f"  \u2022 {f}" for f in getattr(config, "HIGH_PERFORMING_TITLE_FORMATS", []))
+    title_formats = "\n".join(f"  • {f}" for f in getattr(config, "HIGH_PERFORMING_TITLE_FORMATS", []))
 
-    prompt = f"""You are the head writer for "Archive of Enigmas" — a true crime YouTube channel aiming to go viral.
-Write a COMPLETE 18-22 minute video script (3000+ words) about this case.{lang_instruction}
+    case    = story["title"]
+    context = story.get("content", "")[:3000]
 
-Story Title: {story['title']}
-Story Content: {story['content']}
+    # ── CHAPTER DEFINITIONS ─────────────────────────────────────────────────
+    CHAPTERS = [
+        {
+            "name": "HOOK + INTRO",
+            "instruction": f"""Write ONLY the HOOK and INTRO section (550-650 words) for a true crime video about: {case}
 
-RECENT TITLES (DO NOT repeat these patterns): {recent_titles_str}
+Context: {context[:800]}
 
-STRUCTURE (CRITICAL — must hit 3000+ words):
-[HOOK — 90 seconds] Open with the MOST shocking moment. No intro yet. Drop viewer into the action.
-[TEASER] Preview 3 shocking things they will learn. Subscribe reminder.
-[CHAPTER 1: THE VICTIM / BACKGROUND — 4 mins] Full scene setting. Who were they? Make viewer care.
-  End with cliffhanger question. [PAUSE marker here]
-[CHAPTER 2: THE CRIME — 5 mins] Minute-by-minute breakdown. Maximum tension. Specific details.
-  [PAUSE] [POLL TEASER: Ask viewers to comment their theory before continuing]
-[CHAPTER 3: THE INVESTIGATION — 4 mins] Police failures. Key clues. Suspects. Red herrings.
-  [PAUSE] [ENGAGEMENT: Drop your theory below]
-[CHAPTER 4: SHOCKING REVELATIONS — 3 mins] Plot twists. Things nobody expected.
-[CHAPTER 5: AFTERMATH & JUSTICE — 2 mins] What happened next. Sentencing or cold case status.
-[OUTRO — 1 min] Ask 2 engagement questions. Subscribe CTA. Preview next video.
+RULES:
+- Open MID-ACTION — the most shocking moment first. No "Hello everyone."
+- Paint the scene vividly: time, weather, location, exact details.
+- After the shocking opener, say "Before we dive in, subscribe and hit the bell — new cases every day."
+- End with: "Let me take you back to the beginning..."
+- {lang_instruction}
+- Write ONLY the spoken script. No stage directions. No chapter labels."""
+        },
+        {
+            "name": "THE VICTIM / BACKGROUND",
+            "instruction": f"""Write ONLY Chapter 1 (600-700 words) for a true crime video about: {case}
 
-WRITING RULES:
-- 3000+ words MINIMUM. Long = more watch time = algorithm favors you.
-- Use "you" constantly — make it personal and immersive.
-- End EVERY chapter with a cliffhanger or question.
-- Add specific dates, names, locations — specificity builds credibility.
-- Include [PAUSE] markers every 5-7 minutes for chapter cards.
-- Sound like a gripping podcast host, NOT a Wikipedia article.
-- Include 2-3 moments that will make viewers COMMENT (controversy, surprise, injustice).
+Context: {context[:1500]}
 
+CHAPTER TITLE: "The Victim / Background"
+RULES:
+- Paint a full picture of the victim or key people. Make the viewer CARE about them.
+- Specific details: job, family, personality, daily routine.
+- Build up to the moment everything changed.
+- End with a cliffhanger question that keeps viewers watching.
+- {lang_instruction}
+- Write ONLY the spoken script. Start directly with the content."""
+        },
+        {
+            "name": "THE CRIME",
+            "instruction": f"""Write ONLY Chapter 2 (650-750 words) for a true crime video about: {case}
 
-Then:
----METADATA---
-TITLE: (CRITICAL RULES:
-  1. Under 70 characters.
-  2. MUST include a real name (victim OR perpetrator) OR a specific location/year.
-  3. Use ONE of these proven high-CTR formats:
+Context: {context}
+
+CHAPTER TITLE: "The Crime"
+RULES:
+- Minute-by-minute breakdown of what happened. Maximum tension.
+- Use specific timestamps, dates, locations if known.
+- Include at least one detail that will SHOCK the viewer.
+- Midway, ask: "Comment below — what do you think happened next?"
+- End with a cliffhanger leading into the investigation.
+- {lang_instruction}
+- Write ONLY the spoken script. Start directly with the content."""
+        },
+        {
+            "name": "THE INVESTIGATION",
+            "instruction": f"""Write ONLY Chapter 3 (600-700 words) for a true crime video about: {case}
+
+Context: {context}
+
+CHAPTER TITLE: "The Investigation"
+RULES:
+- Cover police response, key evidence, suspects, red herrings.
+- Include at least one police failure or controversial decision.
+- Ask viewers: "Drop your theory in the comments — who do YOU think did it?"
+- Build tension toward the revelation.
+- {lang_instruction}
+- Write ONLY the spoken script. Start directly with the content."""
+        },
+        {
+            "name": "SHOCKING REVELATIONS + AFTERMATH",
+            "instruction": f"""Write ONLY Chapters 4 and 5 combined (650-750 words) for a true crime video about: {case}
+
+Context: {context}
+
+CHAPTER 4: Shocking Revelations — the plot twist nobody expected.
+CHAPTER 5: Aftermath & Justice — verdict, sentencing, or cold case status today.
+
+Then write a 60-word OUTRO:
+- Ask 2 engagement questions.
+- "If this case gave you chills, subscribe — we post new cases every day."
+- "Link to our next video is on screen right now."
+- {lang_instruction}
+- Write ONLY the spoken script. Start directly with the content."""
+        },
+    ]
+
+    # ── GENERATE EACH CHAPTER SEPARATELY ────────────────────────────────────
+    chapter_scripts = []
+    for i, ch in enumerate(CHAPTERS):
+        print(f"  📝 Chapter {i+1}/5: {ch['name']}...")
+        try:
+            resp = groq_create_with_retry(
+                client,
+                model=getattr(config, "GROQ_MODEL_FAST", config.GROQ_MODEL),
+                messages=[{"role": "user", "content": ch["instruction"]}],
+                max_tokens=1800, temperature=0.88)
+            text = resp.choices[0].message.content.strip()
+            chapter_scripts.append(text)
+            wc = len(text.split())
+            print(f"     ✅ {wc} words")
+        except Exception as e:
+            print(f"  ⚠️ Chapter {i+1} failed: {e} — using placeholder")
+            chapter_scripts.append(f"[Chapter {ch['name']} — generation failed]")
+
+    script = "\n\n[PAUSE]\n\n".join(chapter_scripts)
+    total_wc = len(script.split())
+    print(f"  📊 Total script: {total_wc} words (~{total_wc//150} mins)")
+
+    # ── METADATA (separate call) ─────────────────────────────────────────────
+    print("  🏷️  Generating metadata...")
+    meta_prompt = f"""You are writing metadata for a true crime YouTube video about: {case}
+{lang_instruction}
+
+RECENT TITLES TO AVOID: {recent_titles_str}
+
+Respond ONLY with these fields, no extra text:
+
+TITLE: (Under 70 chars. Use one of these formats:
 {title_formats}
-  4. Must create an unanswered question or shocking contrast.
-  5. Must NOT be similar to: {recent_titles_str}
-  6. NO generic phrases like "True Crime Story" or "Dark Case" — be SPECIFIC.
-  BAD title example: "Virginia Horror" — no name, no hook, no specificity.
-  GOOD title example: "The Virginia Mom Who Poisoned Her Family for 3 Years")
-DESCRIPTION: (400 word SEO-rich description. Include: what happened, why it matters, keywords, timestamps teaser)
-TAGS: (30 tags comma-separated — mix of broad and niche true crime terms)
-THUMBNAIL_TEXT: (3-5 ALL-CAPS words — shocking, specific, curiosity-gap. NOT generic.
-  BAD: "SHOCKING CASE" | GOOD: "SHE KNEW TOO MUCH" or "KILLER NEXT DOOR" or "13 YEARS MISSING")
+  Must include a real name OR location. BAD: "Virginia Horror". GOOD: "The Virginia Mom Who Poisoned Her Family for 3 Years")
+DESCRIPTION: (250 words, SEO-rich. What happened, why it matters, keywords)
+TAGS: (25 comma-separated tags mixing broad and niche true crime terms)
+THUMBNAIL_TEXT: (3-5 ALL-CAPS shocking words. BAD: "SHOCKING CASE". GOOD: "SHE KNEW TOO MUCH")
 THUMBNAIL_MOOD: (dark/red/split/face)
-THUMBNAIL_STYLE: (1, 2, 3, or 4 — pick best for emotional impact)
-PINNED_COMMENT: (A controversial OR divisive question that sparks debate)
-COMMUNITY_POST: (60-word Community tab post with poll question)
-CHAPTERS: (YouTube timestamps, one per line, format: "0:00 Hook")
-"""
-    resp = groq_create_with_retry(
-        client,
-        model=config.GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=8000, temperature=0.88)
-
-    full = resp.choices[0].message.content
-
-    # Shorts call
-    print("  📱 Generating Shorts script (separate call)...")
-    try:
-        shorts_resp = groq_create_with_retry(
-            client,
-            model=config.GROQ_MODEL,
-            messages=[{"role": "user", "content":
-                f"""Write a YouTube Shorts script (55 seconds, exactly 130-150 words) \
-about this true crime case: {story['title']}\n\nContext: {story['content'][:800]}\n\nRULES:\n- Hook in the FIRST 3 WORDS — no intro, no "hey guys"\n- Fast punchy sentences. Maximum tension.\n- Include ONE shocking specific detail (date, name, number)\n- End with a question that makes viewers follow\n- Final line MUST be: "Follow for daily mysteries."\n- Write ONLY the spoken words, no stage directions.{lang_instruction}"""
-            }],
-            max_tokens=400, temperature=0.85)
-        shorts_script = shorts_resp.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"  ⚠️ Shorts call failed: {e}")
-        shorts_script = ""
-
-    if "---METADATA---" in full:
-        script, meta_raw = full.split("---METADATA---", 1)
-    else:
-        script, meta_raw = full, ""
+THUMBNAIL_STYLE: (1, 2, 3, or 4)
+PINNED_COMMENT: (Controversial question that sparks debate. e.g. "Was he framed or did he deserve worse?")
+COMMUNITY_POST: (50-word community tab post with a poll question)
+CHAPTERS: (YouTube timestamps — one per line — format: "0:00 Hook")"""
 
     metadata = {}
-    cur_key, cur_val = None, []
-    for line in meta_raw.strip().split("\n"):
-        matched = False
-        for key in ["TITLE","DESCRIPTION","TAGS","THUMBNAIL_TEXT","THUMBNAIL_MOOD",
-                    "THUMBNAIL_STYLE","PINNED_COMMENT","COMMUNITY_POST","CHAPTERS"]:
-            if line.startswith(f"{key}:"):
-                if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
-                cur_key, cur_val = key, [line.replace(f"{key}:", "").strip()]
-                matched = True; break
-        if not matched and cur_key: cur_val.append(line)
-    if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
+    try:
+        meta_resp = groq_create_with_retry(
+            client,
+            model=config.GROQ_MODEL,
+            messages=[{"role": "user", "content": meta_prompt}],
+            max_tokens=1200, temperature=0.80)
+        meta_raw = meta_resp.choices[0].message.content
+
+        cur_key, cur_val = None, []
+        for line in meta_raw.strip().split("\n"):
+            matched = False
+            for key in ["TITLE","DESCRIPTION","TAGS","THUMBNAIL_TEXT","THUMBNAIL_MOOD",
+                        "THUMBNAIL_STYLE","PINNED_COMMENT","COMMUNITY_POST","CHAPTERS"]:
+                if line.startswith(f"{key}:"):
+                    if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
+                    cur_key, cur_val = key, [line.replace(f"{key}:", "").strip()]
+                    matched = True; break
+            if not matched and cur_key:
+                cur_val.append(line)
+        if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
+    except Exception as e:
+        print(f"  ⚠️ Metadata generation failed: {e}")
 
     metadata.setdefault("title", story["title"])
     metadata.setdefault("description", f"True crime: {story['title']}")
@@ -768,63 +827,76 @@ about this true crime case: {story['title']}\n\nContext: {story['content'][:800]
     metadata.setdefault("thumbnail_mood", "dark")
     metadata.setdefault("thumbnail_style", random.choice(config.THUMBNAIL_STYLES))
     metadata.setdefault("pinned_comment", "What do YOU think happened? Drop your theory! 👇")
-    metadata.setdefault("community_post", f"We just dropped a new case. {story['title']}. Do you think justice was served? Comment your theory!")
+    metadata.setdefault("community_post", f"New case just dropped: {story['title']}. Do you think justice was served?")
 
-    topic_key   = story.get("topic", "other")
+    # ── SHORTS SCRIPT ────────────────────────────────────────────────────────
+    print("  📱 Generating Shorts script...")
+    shorts_script = ""
+    try:
+        shorts_resp = groq_create_with_retry(
+            client,
+            model=config.GROQ_MODEL,
+            messages=[{"role": "user", "content":
+                f"""Write a YouTube Shorts script (55 seconds, 130-150 words) about: {case}
+Context: {context[:600]}
+RULES:
+- Hook in the FIRST 3 WORDS. No intro. No "hey guys".
+- Fast punchy sentences. Maximum tension.
+- ONE shocking specific detail (date, name, number).
+- End: "Follow for daily mysteries."
+- {lang_instruction}
+- Write ONLY the spoken words."""}],
+            max_tokens=400, temperature=0.85)
+        shorts_script = shorts_resp.choices[0].message.content.strip()
+        print(f"     ✅ {len(shorts_script.split())} words")
+    except Exception as e:
+        print(f"  ⚠️ Shorts failed: {e}")
+
+    # ── BUILD FULL DESCRIPTION ───────────────────────────────────────────────
+    topic_key  = story.get("topic", "other")
     _EXTRA_NICHE = {
         "assault":  ["#CrimesAgainstWomen","#JusticeForVictims","#SexualAssaultAwareness"],
-        "caste":    ["#CasteViolence","#DalitRights","#HonourCrime","#JusticeInIndia"],
+        "caste":    ["#CasteViolence","#DalitRights","#HonourCrime"],
         "poison":   ["#PoisoningCase","#TrueCrimePoison","#DarkMedicine"],
         "fraud":    ["#WhiteCollarCrime","#FinancialFraud","#CorporateCrime"],
         "kidnap":   ["#KidnappingCase","#AbductionStory","#FoundAlive"],
     }
-    niche = (config.NICHE_HASHTAGS.get(topic_key) or
-             _EXTRA_NICHE.get(topic_key) or
-             config.NICHE_HASHTAGS.get("default", []))
-
-    # Add language-specific hashtags
+    niche    = (config.NICHE_HASHTAGS.get(topic_key) or
+                _EXTRA_NICHE.get(topic_key) or
+                config.NICHE_HASHTAGS.get("default", []))
     lang_suffix = config.SUPPORTED_LANGUAGES.get(language, {}).get("hashtag_suffix", "")
-    trending = getattr(config, "TRENDING_HASHTAGS", [])
-    hashtags = " ".join(config.BASE_HASHTAGS[:15] + niche[:5] + trending[:3]) + lang_suffix
+    trending    = getattr(config, "TRENDING_HASHTAGS", [])
+    hashtags    = " ".join(config.BASE_HASHTAGS[:15] + niche[:5] + trending[:3]) + lang_suffix
     metadata["hashtags"] = hashtags
 
-    chapters = metadata.get("chapters", "0:00 Hook\n2:00 Background\n6:00 The Crime\n11:00 Investigation\n16:00 Aftermath\n19:00 Conclusion")
+    chapters_text = metadata.get("chapters",
+        "0:00 Hook\n2:30 Background\n7:00 The Crime\n12:00 Investigation\n17:00 Aftermath\n19:30 Conclusion")
     metadata["full_description"] = f"""{metadata['description']}
 
 ⏱️ CHAPTERS:
-{chapters}
+{chapters_text}
 
-🔔 Subscribe for daily true crime → {config.CHANNEL_HANDLE}
+🔔 Subscribe → {config.CHANNEL_HANDLE}
 👍 Like if this gave you chills
-💬 Drop your theory below — we read every comment!
-🔕 Turn on notifications so you never miss a case
+💬 Drop your theory below
+🔕 Turn on notifications
 
 {hashtags}
 
 © {config.CHANNEL_NAME} — Educational purposes only. All content based on public records."""
 
-    # Auto-inject location + year tags for better SEO discoverability
     import re as _re
-    year_matches = _re.findall(r'\b(19|20)\d{2}\b', story.get("content", "") + story.get("title", ""))
-    year_tags    = [y for y in dict.fromkeys(year_matches)][:2]          # up to 2 unique years
-    # Pull capitalised words likely to be place names (2+ consecutive caps words)
-    place_matches = _re.findall(r'\b([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?)', story.get("title",""))
+    year_matches  = _re.findall(r'\b(19|20)\d{2}\b', story.get("content","") + story.get("title",""))
+    year_tags     = list(dict.fromkeys(year_matches))[:2]
+    place_matches = _re.findall(r'\b([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?)\b', story.get("title",""))
     place_tags    = [p for p in place_matches if p not in ("The","She","He","They","What","Who","How","Why")][:3]
     raw_tags      = [t.strip() for t in metadata["tags"].split(",")]
-    bonus_tags    = ([f"true crime {y}" for y in year_tags] +
-                     [f"{p} crime" for p in place_tags] +
-                     [f"{p} murder" for p in place_tags])
-    metadata["tags_list"] = (raw_tags + bonus_tags)[:35]   # YouTube allows up to 500 chars total
-    wc = len(script.split())
-    print(f"✅ Main script: {wc} words (~{wc//150} mins)")
-    print(f"✅ Shorts script: {len(shorts_script.split())} words")
+    bonus_tags    = ([f"true crime {y}" for y in year_tags] + [f"{p} crime" for p in place_tags])
+    metadata["tags_list"] = (raw_tags + bonus_tags)[:35]
+
+    print(f"✅ Script done: {total_wc} words (~{total_wc//150} mins) | Metadata: {metadata.get('title','?'[:50])}")
     return script.strip(), shorts_script, metadata
 
-
-# ============================================
-# STEP 5b — TRANSLATE SCRIPT (Multi-language)
-# FIX: Now properly updates title, description and all metadata
-# ============================================
 
 def translate_script(script, shorts_script, metadata, target_lang):
     """Translate script and ALL metadata to target language using Groq."""
@@ -1381,152 +1453,111 @@ def _best_bg_image(image_paths, story_title=""):
     return rng.choice(top3)
 
 def create_thumbnail(image_paths, metadata, story):
+    """
+    v13 THUMBNAIL REDESIGN — guaranteed visible text regardless of background.
+    Layout: dark-tinted BG image + bright yellow headline + red band + channel badge.
+    Inspired by: Kendall Rae, JCS, Coffeehouse Crime thumbnail style.
+    """
     print("\n🖼️  Step 11: Creating thumbnail...")
     W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT
     thumb = os.path.join(config.OUTPUT_FOLDER, "thumbnail.jpg")
 
-    style      = str(metadata.get("thumbnail_style", "1")).strip()
-    thumb_text = metadata.get("thumbnail_text", "SHOCKING CASE").upper()
-    if len(thumb_text) > 28:
-        thumb_text = thumb_text[:25].rsplit(" ", 1)[0] + "..."
+    thumb_text = metadata.get("thumbnail_text", "SHOCKING CASE").upper().strip()
+    # Trim to 4 words max — shorter text = bigger font = more readable
+    words = thumb_text.split()[:4]
+    thumb_text = " ".join(words)
 
-    raw_title  = story["title"]
+    raw_title = metadata.get("title", story["title"])
+    # Trim title to 2 lines max for bottom bar
+    title_display = raw_title[:60] + ("..." if len(raw_title) > 60 else "")
 
-    FONT_PATH_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-    FONT_PATH_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-    # v11 FIX: Use Bebas Neue for headline text if available (looks like Netflix/crime docs)
-    BEBAS_PATH = BEBAS_FONT_PATH or config.FONT_CACHE_PATH
-    HEADLINE_FONT_PATH = BEBAS_PATH if (BEBAS_PATH and os.path.exists(BEBAS_PATH)) else FONT_PATH_BOLD
+    # ── FONTS ────────────────────────────────────────────────────────────────
+    FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+    FONT_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+    BEBAS     = BEBAS_FONT_PATH or config.FONT_CACHE_PATH
+    HEADLINE  = BEBAS if (BEBAS and os.path.exists(BEBAS)) else FONT_BOLD
+
+    nwords = len(thumb_text.split())
+    hl_sz  = 140 if nwords <= 2 else (110 if nwords == 3 else 90)
     try:
-        word_count = len(thumb_text.split())
-        hl_size    = 118 if word_count <= 2 else (96 if word_count <= 4 else 80)
-        f_hl  = ImageFont.truetype(HEADLINE_FONT_PATH, hl_size)
-        f_lg  = ImageFont.truetype(FONT_PATH_BOLD, 52)
-        f_md  = ImageFont.truetype(FONT_PATH_BOLD, 36)
-        f_sm  = ImageFont.truetype(FONT_PATH_REG,  26)
-        f_tag = ImageFont.truetype(FONT_PATH_BOLD, 22)
+        f_hl   = ImageFont.truetype(HEADLINE, hl_sz)
+        f_sub  = ImageFont.truetype(FONT_BOLD, 38)
+        f_tag  = ImageFont.truetype(FONT_BOLD, 24)
+        f_tiny = ImageFont.truetype(FONT_REG,  22)
     except:
-        f_hl = f_lg = f_md = f_sm = f_tag = ImageFont.load_default()
+        f_hl = f_sub = f_tag = f_tiny = ImageFont.load_default()
 
-    # FIX: Pass story title for seeded randomisation
+    # ── BACKGROUND ───────────────────────────────────────────────────────────
     bg_path  = _best_bg_image(image_paths, story_title=raw_title) if image_paths else None
-    base_img = Image.new("RGB", (W, H), (10, 0, 0))
+    base_img = Image.new("RGB", (W, H), (15, 0, 0))
     if bg_path:
         try:
             base_img = Image.open(bg_path).convert("RGB").resize((W, H), Image.LANCZOS)
         except:
             pass
 
-    def draw_headline(draw, text, font, zone_y, zone_h, fill=(255,255,255), max_w=None):
-        max_w  = max_w or W - 60
-        lines  = _wrap_text(draw, text, font, max_w)
-        lh     = draw.textbbox((0,0), "Ag", font=font)[3] + 8
-        total  = lh * len(lines)
-        y      = zone_y + (zone_h - total) // 2
-        for line in lines:
-            lw = draw.textbbox((0,0), line, font=font)[2]
-            x  = (W - lw) // 2
-            _draw_text_shadow(draw, x, y, line, font, fill=fill)
-            y += lh
-        return y
+    # Darken + desaturate the background so text pops
+    img = ImageEnhance.Brightness(base_img).enhance(0.40)
+    img = ImageEnhance.Color(img).enhance(0.55)
+    img = ImageEnhance.Contrast(img).enhance(1.20)
 
-    def draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0)):
-        draw.rectangle([(0, H-72), (W, H)], fill=bar_color)
-        draw.rectangle([(0, H-74), (W, H-72)], fill=accent)
-        title_lines = _wrap_text(draw, raw_title, f_md, W - 60)
-        line = title_lines[0][:55] + ("..." if len(title_lines[0]) > 55 else "")
-        lw   = draw.textbbox((0,0), line, font=f_md)[2]
-        draw.text(((W-lw)//2, H-62), line, font=f_md, fill=(240,240,240))
+    # Gradient darkening: bottom 60% darker so text band is clear
+    grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd   = ImageDraw.Draw(grad)
+    for row in range(H):
+        # Stronger darkness in bottom half where text lives
+        frac  = row / H
+        alpha = int(80 + 140 * max(0, frac - 0.25))
+        alpha = min(alpha, 210)
+        gd.line([(0, row), (W, row)], fill=(0, 0, 0, alpha))
+    img = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
+    draw = ImageDraw.Draw(img)
 
-    def draw_badge(draw, bg=(180,0,0), fg=(255,255,255)):
-        label = config.CHANNEL_NAME.upper()
-        lw    = draw.textbbox((0,0), label, font=f_tag)[2]
-        pad   = 12
-        draw.rounded_rectangle([(18,14),(lw+pad*2+18, 46)], radius=4, fill=bg)
-        draw.text((18+pad, 18), label, font=f_tag, fill=fg)
+    # ── RED ACCENT LINE (top) ─────────────────────────────────────────────────
+    draw.rectangle([(0, 0), (W, 8)], fill=(220, 0, 0))
 
-    if style == "1":
-        img = ImageEnhance.Brightness(base_img).enhance(0.28)
-        img = ImageEnhance.Color(img).enhance(0.5)
-        img = ImageEnhance.Contrast(img).enhance(1.3)
-        grad = Image.new("RGBA", (W, H), (0,0,0,0))
-        gd   = ImageDraw.Draw(grad)
-        for y in range(H):
-            alpha = int(160 - 120 * abs(y/H - 0.5))
-            gd.line([(0,y),(W,y)], fill=(0,0,0,alpha))
-        img = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        draw_badge(draw)
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,255,255))
-        draw_bottom_bar(draw)
+    # ── CHANNEL BADGE (top-left) ──────────────────────────────────────────────
+    badge_text = "▶  " + config.CHANNEL_NAME.upper()
+    bw = draw.textbbox((0, 0), badge_text, font=f_tag)[2]
+    draw.rounded_rectangle([(16, 16), (bw + 44, 48)], radius=5, fill=(200, 0, 0))
+    draw.text((28, 20), badge_text, font=f_tag, fill=(255, 255, 255))
 
-    elif style == "2":
-        left  = base_img.crop((0, 0, W//2, H))
-        right = base_img.crop((W//2, 0, W, H))
-        left  = ImageEnhance.Brightness(left).enhance(0.22)
-        left  = ImageEnhance.Color(left).enhance(0.2)
-        right = ImageEnhance.Brightness(right).enhance(0.30)
-        right = ImageEnhance.Color(right).enhance(0.45)
-        tint     = Image.new("RGBA", (W//2, H), (160,0,0,130))
-        left_img = Image.alpha_composite(left.convert("RGBA"), tint).convert("RGB")
-        img      = Image.new("RGB", (W, H))
-        img.paste(left_img, (0, 0))
-        img.paste(right, (W//2, 0))
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(W//2-4, 0), (W//2+4, H)], fill=(230,0,0))
-        draw_badge(draw)
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, max_w=W//2-40, fill=(255,255,255))
-        sub_lines = _wrap_text(draw, raw_title, f_md, W//2-40)
-        sy = H//2 - 30
-        for line in sub_lines[:2]:
-            lw = draw.textbbox((0,0), line, font=f_md)[2]
-            x  = W//2 + (W//2 - lw)//2
-            _draw_text_shadow(draw, x, sy, line, f_md, fill=(255,220,0))
-            sy += 46
-        draw_bottom_bar(draw, bar_color=(20,0,0), accent=(200,0,0))
+    # ── MAIN HEADLINE TEXT (center of image) ──────────────────────────────────
+    # Split into lines if needed
+    lines = _wrap_text(draw, thumb_text, f_hl, W - 80)
+    line_h = draw.textbbox((0, 0), "Ag", font=f_hl)[3] + 12
+    total_h = line_h * len(lines)
+    # Position: vertically centered in the middle third of the image
+    text_y = (H // 2) - (total_h // 2) - 30
 
-    elif style == "3":
-        img  = ImageEnhance.Brightness(base_img).enhance(0.15)
-        img  = ImageEnhance.Color(img).enhance(0.2)
-        img  = img.filter(ImageFilter.GaussianBlur(radius=2))
-        vig  = Image.new("RGBA", (W, H), (0,0,0,0))
-        vd   = ImageDraw.Draw(vig)
-        for i in range(0, 350, 2):
-            a = min(int(i * 0.65), 255)
-            vd.rectangle([(i,i),(W-i,H-i)], outline=(0,0,0,a))
-        img  = Image.alpha_composite(img.convert("RGBA"), vig).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        draw_badge(draw, bg=(120,0,0))
-        draw_headline(draw, thumb_text, f_hl, zone_y=60, zone_h=H-140, fill=(255,40,40))
-        draw_bottom_bar(draw, bar_color=(15,0,0), accent=(160,0,0))
+    for i, line in enumerate(lines):
+        lw = draw.textbbox((0, 0), line, font=f_hl)[2]
+        x  = (W - lw) // 2
+        y  = text_y + i * line_h
+        # Multi-layer shadow for readability on any background
+        for sx, sy in [(-4,-4),(4,-4),(-4,4),(4,4),(0,5),(5,0),(-5,0),(0,-5)]:
+            draw.text((x+sx, y+sy), line, font=f_hl, fill=(0, 0, 0))
+        # Yellow-white gradient effect: first line bright yellow, rest white
+        color = (255, 230, 0) if i == 0 else (255, 255, 255)
+        draw.text((x, y), line, font=f_hl, fill=color)
 
-    else:
-        img  = ImageEnhance.Brightness(base_img).enhance(0.25)
-        img  = ImageEnhance.Color(img).enhance(0.35)
-        grad = Image.new("RGBA", (W, H), (0,0,0,0))
-        gd   = ImageDraw.Draw(grad)
-        for y in range(H):
-            alpha = int(180 * (1 - y/H * 0.4))
-            gd.line([(0,y),(W,y)], fill=(0,0,0,alpha))
-        img  = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
-        draw = ImageDraw.Draw(img)
-        draw.rectangle([(0,0),(W,64)], fill=(220,170,0))
-        warn = "TRUE CRIME  //  " + config.CHANNEL_NAME.upper() + "  //  DARK CASE"
-        ww   = draw.textbbox((0,0), warn, font=f_sm)[2]
-        draw.text(((W-ww)//2, 18), warn, font=f_sm, fill=(0,0,0))
-        draw_headline(draw, thumb_text, f_hl, zone_y=70, zone_h=H-160, fill=(255,255,255))
-        sub_lines = _wrap_text(draw, raw_title, f_lg, W-80)
-        sy = H - 130
-        for line in sub_lines[:1]:
-            lw = draw.textbbox((0,0), line, font=f_lg)[2]
-            _draw_text_shadow(draw, (W-lw)//2, sy, line, f_lg, fill=(255,210,0))
-        draw.rectangle([(0,H-60),(W,H)], fill=(10,0,0))
-        draw.rectangle([(0,H-62),(W,H-60)], fill=(220,170,0))
-        draw.text((24,H-48), "UNSOLVED  *  TRUE CRIME  *  DARK MYSTERIES", font=f_tag, fill=(130,130,130))
+    # ── BOTTOM DARK BAND with title ───────────────────────────────────────────
+    band_top = H - 90
+    draw.rectangle([(0, band_top), (W, H)], fill=(10, 0, 0))
+    draw.rectangle([(0, band_top), (W, band_top + 4)], fill=(200, 0, 0))
 
+    # Wrap and draw title in bottom band
+    t_lines = _wrap_text(draw, title_display, f_sub, W - 60)
+    t_y = band_top + 10
+    for tline in t_lines[:2]:
+        tw = draw.textbbox((0, 0), tline, font=f_sub)[2]
+        draw.text(((W - tw) // 2, t_y), tline, font=f_sub, fill=(240, 240, 240))
+        t_y += 42
+
+    # ── SAVE ──────────────────────────────────────────────────────────────────
     img.save(thumb, "JPEG", quality=95, optimize=True)
     size_kb = os.path.getsize(thumb) // 1024
-    print(f"✅ Thumbnail created! Style {style} | {W}x{H} | {size_kb}KB")
+    print(f"✅ Thumbnail: '{thumb_text}' | {W}x{H} | {size_kb}KB")
     return thumb
 
 
