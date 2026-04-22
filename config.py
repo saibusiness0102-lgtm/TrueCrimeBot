@@ -4,11 +4,14 @@
 #        better thumbnail hooks, updated music URLs
 # ============================================================
 
-
 import os
 
 GROQ_API_KEY   = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL     = "llama-3.3-70b-versatile"
+# v13: Use two models strategically
+# - 8b-instant for chapters (high rate limit: 131k tokens/min, 6 parallel calls safe)
+# - 70b-versatile for metadata only (better quality for titles/descriptions)
+GROQ_MODEL         = "llama-3.3-70b-versatile"   # metadata, translation
+GROQ_MODEL_FAST    = "llama-3.1-8b-instant"       # chapter generation (131k TPM limit)
 
 PEXELS_API_KEY  = os.environ.get("PEXELS_API_KEY", "")
 PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY", "")
