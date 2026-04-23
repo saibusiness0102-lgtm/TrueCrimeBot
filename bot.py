@@ -821,6 +821,7 @@ CHAPTERS: (YouTube timestamps — one per line — format: "0:00 Hook")"""
         print(f"  ⚠️ Metadata generation failed: {e}")
 
     metadata.setdefault("title", story["title"])
+    metadata["topic"] = story.get("topic", "default")   # v14: needed for playlist routing
     metadata.setdefault("description", f"True crime: {story['title']}")
     metadata.setdefault("tags", "true crime,mystery,unsolved,dark cases")
     metadata.setdefault("thumbnail_text", "SHOCKING CASE")
@@ -871,19 +872,35 @@ RULES:
 
     chapters_text = metadata.get("chapters",
         "0:00 Hook\n2:30 Background\n7:00 The Crime\n12:00 Investigation\n17:00 Aftermath\n19:30 Conclusion")
+    # ── SEO KEYWORD INJECTION ────────────────────────────────────────────────
+    topic_seo   = getattr(config, "TOPIC_SEO_KEYWORDS",  {}).get(topic_key, [])
+    global_seo  = getattr(config, "GLOBAL_SEO_TERMS",    [])
+    lang_seo    = getattr(config, "LANGUAGE_SEO_KEYWORDS",{}).get(language, [])
+    end_screen  = getattr(config, "END_SCREEN_CTA",       {}).get(language, "")
+
+    # Build SEO keyword block — hidden in description but indexed by YouTube search
+    seo_keywords = list(dict.fromkeys(topic_seo[:5] + global_seo[:5] + lang_seo[:5]))
+    seo_block    = " | ".join(seo_keywords[:12]) if seo_keywords else ""
+
     metadata["full_description"] = f"""{metadata['description']}
 
 ⏱️ CHAPTERS:
 {chapters_text}
 
+{end_screen}
+
 🔔 Subscribe → {config.CHANNEL_HANDLE}
 👍 Like if this gave you chills
-💬 Drop your theory below
-🔕 Turn on notifications
+💬 Drop your theory below — we read every comment
+🔕 Turn on notifications — new case every day
 
 {hashtags}
 
-© {config.CHANNEL_NAME} — Educational purposes only. All content based on public records."""
+─────────────────────────────────
+{seo_block}
+─────────────────────────────────
+
+© {config.CHANNEL_NAME} — Educational & informational purposes only. All content based on public records and news sources."""
 
     import re as _re
     year_matches  = _re.findall(r'\b(19|20)\d{2}\b', story.get("content","") + story.get("title",""))
@@ -1566,6 +1583,128 @@ def create_thumbnail(image_paths, metadata, story):
 # FIX: Now accepts language parameter and sets correct defaultLanguage
 # ============================================
 
+# ============================================
+# PLAYLIST MANAGER — v14 SEO
+# ============================================
+# Playlists are indexed by YouTube search independently of videos.
+# A "Serial Killers Documentary" playlist ranks for that keyword
+# even if individual videos haven't gained traction yet.
+# ============================================
+
+PLAYLIST_CACHE_FILE = "playlist_cache.json"
+
+def load_playlist_cache():
+    if os.path.exists(PLAYLIST_CACHE_FILE):
+        try:
+            with open(PLAYLIST_CACHE_FILE) as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
+
+def save_playlist_cache(cache):
+    with open(PLAYLIST_CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=2)
+
+# Playlist definitions — one per topic, SEO-optimised titles
+PLAYLIST_DEFINITIONS = {
+    "serial":     {"en": "Serial Killers — True Crime Documentaries",
+                   "hi": "सीरियल किलर — सच्ची अपराध कहानियां",
+                   "es": "Asesinos en Serie — Crimen Real",
+                   "pt": "Serial Killers — Documentários de Crime Real",
+                   "fr": "Tueurs en Série — Documentaires Crime Vrai"},
+    "murder":     {"en": "Murder Mysteries — True Crime Cases",
+                   "hi": "हत्या के रहस्य — सच्ची घटनाएं",
+                   "es": "Misterios de Asesinato — Casos Criminales",
+                   "pt": "Mistérios de Assassinato — Casos Reais",
+                   "fr": "Mystères de Meurtre — Affaires Criminelles"},
+    "missing":    {"en": "Missing Persons — Unsolved Disappearances",
+                   "hi": "गुमशुदा लोग — अनसुलझे मामले",
+                   "es": "Personas Desaparecidas — Casos Sin Resolver",
+                   "pt": "Pessoas Desaparecidas — Casos Não Resolvidos",
+                   "fr": "Personnes Disparues — Affaires Non Résolues"},
+    "heist":      {"en": "Greatest Heists in History — True Crime",
+                   "hi": "इतिहास की सबसे बड़ी डकैतियां",
+                   "es": "Los Mayores Robos de la Historia",
+                   "pt": "Os Maiores Roubos da História",
+                   "fr": "Les Plus Grands Braquages de l'Histoire"},
+    "cult":       {"en": "Cults & Dark Secrets — True Crime Documentaries",
+                   "hi": "पंथ और काले रहस्य — सच्ची घटनाएं",
+                   "es": "Sectas y Secretos Oscuros — Crimen Real",
+                   "pt": "Seitas e Segredos Sombrios — Crime Real",
+                   "fr": "Sectes et Secrets Sombres — Crime Vrai"},
+    "unsolved":   {"en": "Unsolved Mysteries — Cold Cases Documentary",
+                   "hi": "अनसुलझे रहस्य — कोल्ड केस",
+                   "es": "Misterios Sin Resolver — Casos Fríos",
+                   "pt": "Mistérios Não Resolvidos — Casos Frios",
+                   "fr": "Mystères Non Résolus — Affaires Non Classées"},
+    "fraud":      {"en": "Biggest Frauds & Scams — True Crime",
+                   "hi": "सबसे बड़े घोटाले — सच्ची घटनाएं",
+                   "es": "Los Mayores Fraudes y Estafas — Crimen Real",
+                   "pt": "As Maiores Fraudes e Golpes — Crime Real",
+                   "fr": "Les Plus Grandes Fraudes — Crime Vrai"},
+    "coldcase":   {"en": "Cold Cases Solved — True Crime Documentary",
+                   "hi": "सुलझे कोल्ड केस — अपराध की कहानियां",
+                   "es": "Casos Fríos Resueltos — Crimen Real",
+                   "pt": "Casos Frios Resolvidos — Crime Real",
+                   "fr": "Affaires Froides Résolues — Crime Vrai"},
+    "default":    {"en": "True Crime Documentary — Archive of Enigmas",
+                   "hi": "सच्ची अपराध कहानियां — Archive of Enigmas",
+                   "es": "Documentales de Crimen Real — Archive of Enigmas",
+                   "pt": "Documentários de Crime Real — Archive of Enigmas",
+                   "fr": "Documentaires Crime Vrai — Archive of Enigmas"},
+}
+
+def get_or_create_playlist(yt, topic, language):
+    """Get existing playlist ID or create a new one for this topic+language."""
+    cache = load_playlist_cache()
+    cache_key = f"{topic}_{language}"
+    if cache_key in cache:
+        print(f"  📋 Using cached playlist: {cache[cache_key]}")
+        return cache[cache_key]
+
+    topic_key = topic if topic in PLAYLIST_DEFINITIONS else "default"
+    lang_titles = PLAYLIST_DEFINITIONS[topic_key]
+    pl_title = lang_titles.get(language, lang_titles["en"])
+
+    pl_desc = (f"A collection of true crime documentaries about {topic_key} cases. "
+               f"New episodes added daily. Subscribe for more: {config.CHANNEL_HANDLE}")
+    try:
+        resp = yt.playlists().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title":          pl_title[:100],
+                    "description":    pl_desc,
+                    "defaultLanguage": language,
+                },
+                "status": {"privacyStatus": "public"}
+            }
+        ).execute()
+        pl_id = resp["id"]
+        cache[cache_key] = pl_id
+        save_playlist_cache(cache)
+        print(f"  ✅ Created playlist: '{pl_title}' → {pl_id}")
+        return pl_id
+    except Exception as e:
+        print(f"  ⚠️ Playlist create failed: {e}")
+        return None
+
+def add_video_to_playlist(yt, video_id, playlist_id):
+    """Add a video to a playlist."""
+    try:
+        yt.playlistItems().insert(
+            part="snippet",
+            body={"snippet": {
+                "playlistId": playlist_id,
+                "resourceId": {"kind": "youtube#video", "videoId": video_id}
+            }}
+        ).execute()
+        print(f"  ✅ Added to playlist: {playlist_id}")
+    except Exception as e:
+        print(f"  ⚠️ Playlist add failed: {e}")
+
+
 def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, language="en"):
     kind = "Short" if is_short else "Video"
     print(f"\n📤 Step 12: Uploading {kind} to YouTube ({language.upper()})...")
@@ -1591,21 +1730,28 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         tags        = metadata.get("tags_list",[])
 
     # FIX: Use the actual language code for this video
+    # ── BUILD VIDEO BODY WITH FULL SEO METADATA ─────────────────────────────
     body = {
         "snippet": {
-            "title": title,
-            "description": description,
-            "tags": tags[:500],
-            "categoryId": "25",
-            "defaultLanguage": language,          # FIX: was hardcoded "en"
-            "defaultAudioLanguage": language,     # FIX: was hardcoded "en"
+            "title":                title,
+            "description":          description,
+            "tags":                 tags[:500],
+            "categoryId":           "25",          # News & Politics (best for true crime)
+            "defaultLanguage":      language,
+            "defaultAudioLanguage": language,
         },
-        "status": {"privacyStatus":"public","selfDeclaredMadeForKids":False}
+        "status": {
+            "privacyStatus":             "public",
+            "selfDeclaredMadeForKids":   False,
+            "license":                   "youtube",
+            "embeddable":                True,      # Allow embedding — boosts external traffic
+            "publicStatsViewable":       True,
+        }
     }
 
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     try:
-        resp = yt.videos().insert(part="snippet,status", body=body, media_body=media).execute()
+        resp = yt.videos().insert(part="snippet,status,localizations", body=body, media_body=media).execute()
     except Exception as e:
         if "uploadLimitExceeded" in str(e):
             print("\u26a0\ufe0f  YouTube daily upload limit reached for this channel.")
@@ -1615,6 +1761,44 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         raise
     vid   = resp.get("id")
     print(f"✅ {kind} uploaded! ID: {vid}")
+
+    # ── PUSH LOCALIZATIONS — makes video searchable in multiple languages ────
+    # YouTube indexes each localization independently, multiplying search reach
+    if not is_short and vid:
+        try:
+            base_title = metadata.get("title", "")[:100]
+            base_desc  = metadata.get("description", "")[:400]
+            # Build localizations dict from all supported languages
+            localizations = {}
+            for loc_lang, loc_cfg in config.SUPPORTED_LANGUAGES.items():
+                if loc_lang == language:
+                    continue  # already set as default
+                loc_name = loc_cfg.get("name", loc_lang)
+                # Use base English title/desc as fallback for other languages
+                # (proper translations only happen when that language runs its own pipeline)
+                localizations[loc_lang] = {
+                    "title":       base_title,
+                    "description": base_desc,
+                }
+            if localizations:
+                yt.videos().update(
+                    part="localizations",
+                    body={"id": vid, "localizations": localizations}
+                ).execute()
+                print(f"  🌍 Localizations pushed: {list(localizations.keys())}")
+        except Exception as e:
+            print(f"  ⚠️ Localizations failed (non-critical): {e}")
+
+    # ── ADD TO TOPIC PLAYLIST (SEO: playlists rank independently) ────────────
+    if not is_short:
+        topic = metadata.get("topic", "default")
+        pl_id = get_or_create_playlist(yt, topic, language)
+        if pl_id:
+            add_video_to_playlist(yt, vid, pl_id)
+        # Also add to master "All Cases" playlist
+        master_pl = get_or_create_playlist(yt, "default", language)
+        if master_pl and master_pl != pl_id:
+            add_video_to_playlist(yt, vid, master_pl)
 
     if not is_short and thumbnail_path and os.path.exists(thumbnail_path):
         size_kb = os.path.getsize(thumbnail_path) // 1024
@@ -1650,20 +1834,35 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         tmpl       = random.choice(config.PINNED_COMMENT_TEMPLATES)
         pinned_msg = tmpl.format(question=pinned, handle=config.CHANNEL_HANDLE)
         try:
+            # First comment: chapters (timestamps) = SEO gold + viewer retention
+            chapters_text = metadata.get("chapters", "")
+            first_comment_tmpl = getattr(config, "FIRST_COMMENT_TEMPLATE", "")
+            if first_comment_tmpl and chapters_text:
+                first_msg = first_comment_tmpl.format(
+                    chapters=chapters_text[:400],
+                    handle=config.CHANNEL_HANDLE
+                )
+            else:
+                first_msg = pinned_msg  # fallback to regular pinned
+
             thread = yt.commentThreads().insert(
                 part="snippet",
-                body={"snippet":{"videoId":vid,"topLevelComment":{"snippet":{"textOriginal":pinned_msg}}}}).execute()
+                body={"snippet":{"videoId":vid,"topLevelComment":{"snippet":{"textOriginal":first_msg}}}}).execute()
             comment_id = thread["snippet"]["topLevelComment"]["id"]
-            # Pin it so it's always top
             try:
                 yt.comments().setModerationStatus(
-                    id=comment_id,
-                    moderationStatus="published",
-                    banAuthor=False
+                    id=comment_id, moderationStatus="published", banAuthor=False
                 ).execute()
             except Exception:
-                pass  # pinning needs extra OAuth scope; gracefully skip if unavailable
-            print("✅ Pinned comment posted!")
+                pass
+            print("✅ First comment (chapters + CTA) posted!")
+
+            # Second comment: the engagement question (drives algorithm signals)
+            import time as _t2; _t2.sleep(3)
+            yt.commentThreads().insert(
+                part="snippet",
+                body={"snippet":{"videoId":vid,"topLevelComment":{"snippet":{"textOriginal":pinned_msg}}}}).execute()
+            print("✅ Engagement comment posted!")
         except Exception as e:
             print(f"⚠️ Comment: {e}")
 
