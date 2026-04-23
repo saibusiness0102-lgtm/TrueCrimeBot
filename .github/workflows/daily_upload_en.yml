@@ -1,8 +1,10 @@
-name: Archive of Enigmas - English (Manual Only)
-
-# English is MANUAL-ONLY. Trigger via Actions → Run workflow when needed.
+name: Archive of Enigmas - English (Daily)
 
 on:
+  schedule:
+    # 6:00 PM UTC = 6:00 PM EST = 11:30 PM IST
+    # Staggered from other languages — EN audience peaks evenings EST
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 permissions:
