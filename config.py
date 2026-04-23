@@ -157,3 +157,107 @@ HIGH_PERFORMING_TITLE_FORMATS = [
     "The [Profession] Who Led a Double Life as a [Crime]",
     "Inside the [N]-Day Manhunt That Captivated a Nation",
 ]
+
+
+# ============================================================
+# GLOBAL SEO EXPANSION (v14)
+# ============================================================
+
+# High search-volume keywords per topic — injected into description
+# These are the exact phrases people type into YouTube search globally
+TOPIC_SEO_KEYWORDS = {
+    "serial": [
+        "serial killer documentary", "serial killer true story", "real serial killer",
+        "serial killer caught", "serial killer crimes", "most dangerous serial killers",
+        "serial killer confession", "serial killer investigation",
+    ],
+    "murder": [
+        "murder mystery documentary", "real murder case", "unsolved murder",
+        "murder investigation", "true murder story", "homicide documentary",
+        "cold case murder", "murder trial",
+    ],
+    "missing": [
+        "missing person case", "disappearance mystery", "missing without a trace",
+        "unsolved disappearance", "missing person found", "cold case missing person",
+        "kidnapping true story", "abduction documentary",
+    ],
+    "heist": [
+        "biggest heist in history", "true crime heist", "bank robbery documentary",
+        "real life heist", "greatest robbery ever", "heist gone wrong",
+    ],
+    "cult": [
+        "cult documentary", "cult leader exposed", "cult survivor story",
+        "dangerous cults", "cult crimes", "cult manipulation",
+    ],
+    "unsolved": [
+        "unsolved mystery", "cold case documentary", "unsolved true crime",
+        "unexplained disappearance", "mystery never solved", "cold case solved 2024",
+    ],
+    "fraud": [
+        "financial fraud documentary", "biggest scam ever", "ponzi scheme documentary",
+        "con artist true story", "white collar crime", "billion dollar fraud",
+    ],
+    "conspiracy": [
+        "conspiracy documentary", "cover up exposed", "government conspiracy true crime",
+        "dark secrets exposed", "conspiracy theory documentary",
+    ],
+    "coldcase": [
+        "cold case solved", "cold case documentary 2024", "decades old mystery solved",
+        "cold case investigation", "cold case files documentary",
+    ],
+    "default": [
+        "true crime documentary 2024", "real crime story", "shocking true crime",
+        "documentary true crime", "best true crime cases",
+    ],
+}
+
+# Global audience search terms — added to EVERY video description regardless of topic
+GLOBAL_SEO_TERMS = [
+    "true crime 2024", "true crime documentary", "real crime cases",
+    "unsolved mysteries documentary", "crime documentary", "shocking crimes",
+    "criminal investigation", "dark history documentary", "mysterious deaths",
+    "real life crime story",
+]
+
+# Language-specific high-volume search keywords added to non-EN descriptions
+LANGUAGE_SEO_KEYWORDS = {
+    "hi": [
+        "सच्ची घटना", "हिंदी क्राइम", "अपराध की कहानी", "रहस्यमय मामला",
+        "सीरियल किलर हिंदी", "भारत का सबसे बड़ा अपराध", "Crime Hindi",
+        "crime story hindi", "true crime hindi documentary", "hindi crime documentary 2024",
+    ],
+    "es": [
+        "crimen real", "caso criminal", "documental crimen", "misterio sin resolver",
+        "casos criminales reales", "asesino en serie documental", "crimen verdadero 2024",
+        "investigacion criminal", "caso misterioso", "documental true crime español",
+    ],
+    "pt": [
+        "crime verdadeiro", "caso criminal real", "documentario crime",
+        "misterio nao resolvido", "serial killer brasil", "crime brasil documentario",
+        "caso criminal brasileiro", "investigacao criminal", "true crime portugues 2024",
+    ],
+    "fr": [
+        "crime vrai", "affaire criminelle", "documentaire crime",
+        "mystere non resolu", "tueur en serie documentaire", "affaire criminelle reelle",
+        "enquete criminelle", "true crime francais 2024", "affaire policiere",
+    ],
+    "en": [],  # English already has the base GLOBAL_SEO_TERMS
+}
+
+# Cards / End screen text injected into description
+END_SCREEN_CTA = {
+    "en": "🔴 WATCH NEXT → Our most-viewed cases are on screen right now\n📋 PLAYLIST → All True Crime Cases: [link your playlist here]",
+    "hi": "🔴 अगला देखें → हमारे सबसे ज़्यादा देखे गए मामले अभी स्क्रीन पर हैं",
+    "es": "🔴 VER DESPUÉS → Nuestros casos más vistos están en pantalla ahora",
+    "pt": "🔴 ASSISTIR A SEGUIR → Nossos casos mais vistos estão na tela agora",
+    "fr": "🔴 REGARDER ENSUITE → Nos cas les plus vus sont à l'écran maintenant",
+}
+
+# First-comment SEO boost — posted as a comment with timestamps
+# YouTube indexes comment text for search, this boosts discoverability
+FIRST_COMMENT_TEMPLATE = (
+    "⏱️ JUMP TO:\n"
+    "{chapters}\n\n"
+    "💬 What do YOU think? Drop your theory below 👇\n"
+    "🔔 Subscribe for daily true crime → {handle}"
+)
