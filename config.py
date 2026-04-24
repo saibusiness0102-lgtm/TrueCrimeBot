@@ -23,8 +23,9 @@ TTS_VOICE  = "en-US-ChristopherNeural"
 TTS_RATE   = "-5%"
 TTS_VOLUME = "+0%"
 
-VIDEO_WIDTH   = 1920
-VIDEO_HEIGHT  = 1080
+# v16: 720p — YouTube still shows as HD, ffmpeg render drops from 35→18 min
+VIDEO_WIDTH   = 1280
+VIDEO_HEIGHT  = 720
 VIDEO_FPS     = 24
 VIDEO_BITRATE = "8000k"
 
