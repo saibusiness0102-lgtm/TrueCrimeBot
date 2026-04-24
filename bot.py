@@ -44,19 +44,23 @@ if not hasattr(Image, 'ANTIALIAS'):
 # ============================================
 
 def ensure_bebas_font():
-    """Download Bebas Neue once per run and cache it at FONT_CACHE_PATH."""
+    """Download Bebas Neue once per run — tries multiple URLs."""
     import urllib.request
     path = config.FONT_CACHE_PATH
     if os.path.exists(path) and os.path.getsize(path) > 10000:
         return path
-    try:
-        print("  🔤 Downloading Bebas Neue font...")
-        urllib.request.urlretrieve(config.BEBAS_NEUE_URL, path)
-        if os.path.getsize(path) > 10000:
-            print("  ✅ Bebas Neue downloaded!")
-            return path
-    except Exception as e:
-        print(f"  ⚠️ Font download failed ({e}), using fallback")
+    urls = getattr(config, "BEBAS_NEUE_URLS", []) or [getattr(config, "BEBAS_NEUE_URL", "")]
+    for url in urls:
+        if not url: continue
+        try:
+            print(f"  🔤 Downloading Bebas Neue font...")
+            urllib.request.urlretrieve(url, path)
+            if os.path.exists(path) and os.path.getsize(path) > 10000:
+                print("  ✅ Bebas Neue downloaded!")
+                return path
+        except Exception as e:
+            print(f"  ⚠️ Font URL failed ({e}), trying next...")
+    print("  ⚠️ All font URLs failed — using LiberationSans fallback")
     return None
 
 BEBAS_FONT_PATH = None   # set on first run in run_pipeline()
@@ -723,16 +727,16 @@ CRITICAL RULES:
         resp = groq_create_with_retry(
             client,
             model=config.GROQ_MODEL,
-            messages=[{{"role": "user", "content": combined_prompt}}],
+            messages=[{"role": "user", "content": combined_prompt}],
             max_tokens=4500, temperature=0.85)
         raw = resp.choices[0].message.content.strip()
-        print(f"  📄 Raw response: {{len(raw.split())}} words")
+        print(f"  📄 Raw response: {len(raw.split())} words")
     except Exception as e:
-        print(f"  ❌ Generation failed: {{e}}")
-        raw = f"===SECTION1===\nThis is the story of {{case}}.\n---METADATA---\nTITLE: {{case}}"
+        print(f"  ❌ Generation failed: {e}")
+        raw = f"===SECTION1===\nThis is the story of {case}.\n---METADATA---\nTITLE: {case}"
 
     # ── PARSE SCRIPT SECTIONS ────────────────────────────────────────────────
-    script_parts = {{}}
+    script_parts = {}
     meta_raw = ""
 
     # Split at ---METADATA--- first
@@ -741,8 +745,8 @@ CRITICAL RULES:
     meta_raw     = raw[meta_split + len("---METADATA---"):].strip() if meta_split != -1 else ""
 
     for i in range(1, 6):
-        marker = f"===SECTION{{i}}==="
-        next_m = f"===SECTION{{i+1}}===" if i < 5 else None
+        marker = f"===SECTION{i}==="
+        next_m = f"===SECTION{i+1}===" if i < 5 else None
         s = script_block.find(marker)
         if s == -1:
             script_parts[i] = ""
@@ -757,56 +761,56 @@ CRITICAL RULES:
             lines = lines[1:]
         script_parts[i] = "\n".join(lines).strip()
         wc = len(script_parts[i].split())
-        print(f"     Section {{i}}: {{wc}} words")
+        print(f"     Section {i}: {wc} words")
 
     script = "\n\n[PAUSE]\n\n".join(v for v in script_parts.values() if v)
     total_wc = len(script.split())
     est_mins = total_wc // 150
-    print(f"  📊 Total: {{total_wc}} words → ~{{est_mins}} minutes")
+    print(f"  📊 Total: {total_wc} words → ~{est_mins} minutes")
 
     # If still too short, make one extension call (no sleep needed — different quota bucket)
     if est_mins < 15:
-        print(f"  ⚠️ Only {{est_mins}} min — extending...")
+        print(f"  ⚠️ Only {est_mins} min — extending...")
         try:
             _time.sleep(10)
             ext = groq_create_with_retry(
                 client,
                 model=getattr(config, "GROQ_MODEL_FAST", config.GROQ_MODEL),
-                messages=[{{"role": "user", "content":
-                    f"Continue this true crime script about {{case}}. Write 900 more words. "
+                messages=[{"role": "user", "content":
+                    f"Continue this true crime script about {case}. Write 900 more words. "
                     f"Cover: victim background, crime scene evidence, witness accounts. "
-                    f"Write ONLY spoken words. {{lang_instruction}}"}}],
+                    f"Write ONLY spoken words. {lang_instruction}"}],
                 max_tokens=1500, temperature=0.85)
             script = script + "\n\n[PAUSE]\n\n" + ext.choices[0].message.content.strip()
             total_wc = len(script.split())
-            print(f"  📊 Extended: {{total_wc}} words → ~{{total_wc//150}} minutes")
+            print(f"  📊 Extended: {total_wc} words → ~{total_wc//150} minutes")
         except Exception as e:
-            print(f"  ⚠️ Extension failed: {{e}}")
+            print(f"  ⚠️ Extension failed: {e}")
 
     # ── PARSE METADATA ───────────────────────────────────────────────────────
-    metadata = {{}}
+    metadata = {}
     if meta_raw:
         cur_key, cur_val = None, []
         for line in meta_raw.strip().split("\n"):
             matched = False
             for key in ["TITLE","DESCRIPTION","TAGS","THUMBNAIL_TEXT","THUMBNAIL_MOOD",
                         "THUMBNAIL_STYLE","PINNED_COMMENT","COMMUNITY_POST","CHAPTERS"]:
-                if line.startswith(f"{{key}}:"):
+                if line.startswith(f"{key}:"):
                     if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
-                    cur_key, cur_val = key, [line.replace(f"{{key}}:", "").strip()]
+                    cur_key, cur_val = key, [line.replace(f"{key}:", "").strip()]
                     matched = True; break
             if not matched and cur_key:
                 cur_val.append(line)
         if cur_key: metadata[cur_key.lower()] = "\n".join(cur_val).strip()
 
     metadata.setdefault("title", story["title"])
-    metadata.setdefault("description", f"True crime: {{story['title']}}")
+    metadata.setdefault("description", f"True crime: {story['title']}")
     metadata.setdefault("tags", "true crime,mystery,unsolved,dark cases")
     metadata.setdefault("thumbnail_text", "DARK CASE")
     metadata.setdefault("thumbnail_mood", "dark")
     metadata.setdefault("thumbnail_style", random.choice(config.THUMBNAIL_STYLES))
     metadata.setdefault("pinned_comment", "What do YOU think happened? Drop your theory! 👇")
-    metadata.setdefault("community_post", f"New case: {{story['title']}}. Was justice served?")
+    metadata.setdefault("community_post", f"New case: {story['title']}. Was justice served?")
     metadata["topic"] = story.get("topic", "default")
 
     # ── SHORTS (fast model — small, separate quota bucket) ───────────────────
@@ -817,66 +821,66 @@ CRITICAL RULES:
         sh = groq_create_with_retry(
             client,
             model=getattr(config, "GROQ_MODEL_FAST", config.GROQ_MODEL),
-            messages=[{{"role": "user", "content":
-                f"Write a 140-word YouTube Shorts script about: {{case}}. "
-                f"Context: {{context[:400]}}. "
+            messages=[{"role": "user", "content":
+                f"Write a 140-word YouTube Shorts script about: {case}. "
+                f"Context: {context[:400]}. "
                 f"Hook in first 3 words. No intro. Fast sentences. "
                 f"One shocking fact. End: Follow for daily mysteries. "
-                f"Write ONLY spoken words. {{lang_instruction}}"}}],
+                f"Write ONLY spoken words. {lang_instruction}"}],
             max_tokens=300, temperature=0.85)
         shorts_script = sh.choices[0].message.content.strip()
     except Exception as e:
-        print(f"  ⚠️ Shorts failed: {{e}}")
+        print(f"  ⚠️ Shorts failed: {e}")
 
     # ── BUILD FULL DESCRIPTION ───────────────────────────────────────────────
     topic_key  = story.get("topic", "other")
     niche      = (config.NICHE_HASHTAGS.get(topic_key) or
                   config.NICHE_HASHTAGS.get("default", []))
-    lang_suffix = config.SUPPORTED_LANGUAGES.get(language, {{}}).get("hashtag_suffix", "")
+    lang_suffix = config.SUPPORTED_LANGUAGES.get(language, {}).get("hashtag_suffix", "")
     trending    = getattr(config, "TRENDING_HASHTAGS", [])
     hashtags    = " ".join(config.BASE_HASHTAGS[:15] + niche[:5] + trending[:3]) + lang_suffix
     metadata["hashtags"] = hashtags
 
-    topic_seo  = getattr(config, "TOPIC_SEO_KEYWORDS",   {{}}).get(topic_key, [])
+    topic_seo  = getattr(config, "TOPIC_SEO_KEYWORDS",   {}).get(topic_key, [])
     global_seo = getattr(config, "GLOBAL_SEO_TERMS",     [])
-    lang_seo   = getattr(config, "LANGUAGE_SEO_KEYWORDS",{{}}).get(language, [])
-    end_screen = getattr(config, "END_SCREEN_CTA",        {{}}).get(language, "")
+    lang_seo   = getattr(config, "LANGUAGE_SEO_KEYWORDS",{}).get(language, [])
+    end_screen = getattr(config, "END_SCREEN_CTA",        {}).get(language, "")
     seo_block  = " | ".join(list(dict.fromkeys(
         topic_seo[:4] + global_seo[:4] + lang_seo[:4]))[:10])
 
     chapters_text = metadata.get("chapters",
         "0:00 Hook\n2:30 Background\n7:30 The Crime\n13:00 Investigation\n17:30 Aftermath")
 
-    metadata["full_description"] = f"""{{metadata['description']}}
+    metadata["full_description"] = f"""{metadata['description']}
 
 ⏱️ CHAPTERS:
-{{chapters_text}}
+{chapters_text}
 
-{{end_screen}}
+{end_screen}
 
-🔔 Subscribe → {{config.CHANNEL_HANDLE}}
+🔔 Subscribe → {config.CHANNEL_HANDLE}
 👍 Like if this gave you chills
 💬 Drop your theory below — we read every comment
 🔕 Turn on notifications — new case every day
 
-{{hashtags}}
+{hashtags}
 
 ─────────────────────────────────
-{{seo_block}}
+{seo_block}
 ─────────────────────────────────
 
-© {{config.CHANNEL_NAME}} — Educational purposes only. Based on public records."""
+© {config.CHANNEL_NAME} — Educational purposes only. Based on public records."""
 
     import re as _re
-    year_m  = _re.findall(r'\b(19|20)\d{{2}}\b', story.get("content","") + story.get("title",""))
-    place_m = _re.findall(r'\b([A-Z][a-z]{{2,}}(?:\s[A-Z][a-z]{{2,}})?)\b', story.get("title",""))
+    year_m  = _re.findall(r'\b(19|20)\d{2}\b', story.get("content","") + story.get("title",""))
+    place_m = _re.findall(r'\b([A-Z][a-z]{2,}(?:\s[A-Z][a-z]{2,})?)\b', story.get("title",""))
     place_m = [p for p in place_m if p not in
                ("The","She","He","They","What","Who","How","Why","This","That")][:3]
     raw_tags = [t.strip() for t in metadata["tags"].split(",")]
-    bonus    = [f"true crime {{y}}" for y in list(dict.fromkeys(year_m))[:2]] +                [f"{{p}} crime" for p in place_m]
+    bonus    = [f"true crime {y}" for y in list(dict.fromkeys(year_m))[:2]] +                [f"{p} crime" for p in place_m]
     metadata["tags_list"] = (raw_tags + bonus)[:35]
 
-    print(f"✅ Done: {{total_wc}} words (~{{total_wc//150}} min) | Title: {{metadata.get('title','?')[:55]}}")
+    print(f"✅ Done: {total_wc} words (~{total_wc//150} min) | Title: {metadata.get('title','?')[:55]}")
     return script.strip(), shorts_script, metadata
 
 
