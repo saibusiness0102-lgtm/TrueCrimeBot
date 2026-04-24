@@ -34,9 +34,11 @@ THUMBNAIL_HEIGHT = 720
 THUMBNAIL_STYLES = ["1", "2", "3", "4"]
 
 # FIX v11: Bot auto-downloads Bebas Neue (impact-style) for thumbnails
-BEBAS_NEUE_URL = (
-    "https://github.com/dharmatype/Bebas-Neue/raw/master/fonts/BebasNeue(2019)by_Dharma_Type/otf/BebasNeue-Regular.otf"
-)
+# v16: Updated font URL — multiple fallbacks
+BEBAS_NEUE_URLS = [
+    "https://github.com/google/fonts/raw/main/ofl/bebasneue/BebasNeue-Regular.ttf",
+    "https://fonts.gstatic.com/s/bebasneue/v14/JTUSjIg69CK48gW7PXoo9Wdhyzbi.woff2",
+]
 FONT_CACHE_PATH = "/tmp/BebasNeue.otf"
 
 CHANNEL_NAME     = "Archive of Enigmas"
