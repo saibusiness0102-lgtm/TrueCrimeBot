@@ -1079,53 +1079,119 @@ async def _edge_tts_chunk(text, voice, output_path, rate=None, volume=None):
     await communicate.save(output_path)
 
 def generate_voiceover(script, label="voiceover", voice=None, rate=None):
+    """
+    v18 FIXED TTS: retry per chunk, ssl=False, minimum duration check.
+    Each chunk retried 3x before falling back to silence.
+    """
+    import time as _t
     voice  = voice  or config.TTS_VOICE
     rate   = rate   or config.TTS_RATE
     print(f"\n🎙️  Generating {label} with edge-tts ({voice})...")
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
     audio_path = os.path.join(config.OUTPUT_FOLDER, f"{label}.mp3")
 
-    clean = re.sub(r'\[.*?\]', '', script).replace("[PAUSE]"," ... ").strip()
+    # Clean script — strip stage directions and markers
+    clean = re.sub(r'\[.*?\]', '', script)
+    clean = clean.replace("[PAUSE]", " ... ").strip()
     clean = re.sub(r'\n{3,}', '\n\n', clean)
     clean = re.sub(r'\*+', '', clean)
+    clean = re.sub(r'#+\s*', '', clean)   # strip markdown headers
 
-    max_chars = 3000
+    wc = len(clean.split())
+    print(f"  📝 Script: {wc} words → expected ~{wc//150} min audio")
+
+    # Split into chunks of 2800 chars (safe under edge-tts limit)
+    max_chars = 2800
     chunks    = []
     remaining = clean
     while len(remaining) > max_chars:
+        # Try to cut at sentence boundary
         cut = remaining.rfind('. ', 0, max_chars)
-        if cut == -1: cut = max_chars
-        chunks.append(remaining[:cut + 1])
+        if cut == -1:
+            cut = remaining.rfind('? ', 0, max_chars)
+        if cut == -1:
+            cut = remaining.rfind('! ', 0, max_chars)
+        if cut == -1:
+            cut = max_chars
+        chunks.append(remaining[:cut + 1].strip())
         remaining = remaining[cut + 1:].strip()
-    if remaining:
-        chunks.append(remaining)
+    if remaining.strip():
+        chunks.append(remaining.strip())
+
+    print(f"  📦 {len(chunks)} chunks to process")
 
     chunk_paths = []
+    failed_chunks = 0
+
     for i, chunk in enumerate(chunks):
+        if not chunk.strip():
+            continue
         p = os.path.join(config.OUTPUT_FOLDER, f"edge_chunk_{i}.mp3")
-        try:
-            asyncio.run(_edge_tts_chunk(chunk, voice, p, rate))
-            chunk_paths.append(p)
-            print(f"  🎙️ Chunk {i+1}/{len(chunks)} done")
-        except Exception as e:
-            print(f"  ⚠️ edge-tts chunk {i} failed: {e}")
-            silent = AudioClip(lambda t: 0, duration=5)
+        success = False
+
+        # Retry up to 3 times per chunk
+        for attempt in range(3):
+            try:
+                asyncio.run(_edge_tts_chunk(chunk, voice, p, rate))
+                if os.path.exists(p) and os.path.getsize(p) > 1000:
+                    chunk_paths.append(p)
+                    print(f"  🎙️ Chunk {i+1}/{len(chunks)} ✅ ({len(chunk.split())} words)")
+                    success = True
+                    break
+                else:
+                    print(f"  ⚠️ Chunk {i+1} empty output, retry {attempt+1}/3")
+                    _t.sleep(2)
+            except Exception as e:
+                print(f"  ⚠️ Chunk {i+1} attempt {attempt+1}/3 failed: {str(e)[:80]}")
+                _t.sleep(3)
+
+        if not success:
+            print(f"  ❌ Chunk {i+1} failed all 3 attempts — generating silence")
+            # Estimate duration: ~150 wpm, so words/150 * 60 seconds
+            silence_dur = max(5.0, len(chunk.split()) / 150 * 60)
+            silent = AudioClip(lambda t: 0, duration=silence_dur)
             silent.write_audiofile(p, fps=44100, logger=None)
             chunk_paths.append(p)
+            failed_chunks += 1
+
+    if not chunk_paths:
+        print("❌ ALL TTS chunks failed — creating placeholder audio")
+        placeholder = AudioClip(lambda t: 0, duration=60)
+        placeholder.write_audiofile(audio_path, fps=44100, logger=None)
+        return audio_path
 
     if len(chunk_paths) == 1:
         shutil.copy(chunk_paths[0], audio_path)
     else:
-        clips  = [AudioFileClip(p) for p in chunk_paths]
-        merged = concatenate_audioclips(clips)
-        merged.write_audiofile(audio_path, fps=44100, logger=None)
-        for c in clips: c.close()
+        clips = []
+        for p in chunk_paths:
+            try:
+                clips.append(AudioFileClip(p))
+            except Exception as e:
+                print(f"  ⚠️ Could not load {p}: {e}")
+        if clips:
+            merged = concatenate_audioclips(clips)
+            merged.write_audiofile(audio_path, fps=44100, logger=None)
+            for c in clips: c.close()
+        else:
+            shutil.copy(chunk_paths[0], audio_path)
 
+    # Cleanup
     for p in chunk_paths:
         try: os.remove(p)
         except: pass
 
-    print(f"✅ Voiceover done! ({label})")
+    # Final duration check
+    try:
+        final_audio = AudioFileClip(audio_path)
+        dur_min = final_audio.duration / 60
+        final_audio.close()
+        print(f"✅ Voiceover done: {dur_min:.1f} min ({label})")
+        if dur_min < 15 and failed_chunks > 0:
+            print(f"  ⚠️ Audio shorter than expected ({dur_min:.1f} min) — {failed_chunks} chunks failed")
+    except Exception:
+        print(f"✅ Voiceover done ({label})")
+
     return audio_path
 
 
