@@ -987,24 +987,60 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 
 
 def translate_script(script, shorts_script, metadata, target_lang):
-    """Translate script and ALL metadata to target language using Groq."""
+    """
+    v19 FIX: Translate script in CHAPTERS — no truncation.
+    Old code used script[:4000] = 667 words = 4-minute video.
+    Fix: split on [PAUSE] markers, translate each chapter separately,
+    then rejoin. Each chapter ~700 words = well within token limits.
+    """
     if target_lang == "en":
         return script, shorts_script, metadata
 
     lang_info = config.SUPPORTED_LANGUAGES.get(target_lang, {})
     lang_name = lang_info.get("name", target_lang)
-    print(f"\n🌍 Translating to {lang_name}...")
+    print(f"\n🌍 Translating to {lang_name} (chapter by chapter)...")
 
-    client = Groq(api_key=config.GROQ_API_KEY)
+    client    = Groq(api_key=config.GROQ_API_KEY)
+    fast_model = getattr(config, "GROQ_MODEL_FAST", config.GROQ_MODEL)
 
-    # Translate main script (truncate to fit token budget)
-    resp = groq_create_with_retry(
-        client,
-        model=config.GROQ_MODEL,
-        messages=[{"role": "user", "content":
-            f"Translate this true crime script to {lang_name}. Keep all [PAUSE] and [CHAPTER] markers. Keep the dramatic tone:\n\n{script[:4000]}"}],
-        max_tokens=5000, temperature=0.3)
-    translated_script = resp.choices[0].message.content
+    # Split script into chapters on [PAUSE] markers
+    chapters = [c.strip() for c in script.split("[PAUSE]") if c.strip()]
+    print(f"  📚 Translating {len(chapters)} chapters...")
+
+    translated_chapters = []
+    for i, chapter in enumerate(chapters):
+        print(f"  🌐 Chapter {i+1}/{len(chapters)} ({len(chapter.split())} words)...")
+        for attempt in range(3):
+            try:
+                resp = groq_create_with_retry(
+                    client,
+                    model=fast_model,
+                    messages=[{"role": "user", "content":
+                        f"Translate this true crime narration to {lang_name}. "
+                        f"Keep the exact dramatic tone and pacing. "
+                        f"Translate EVERY sentence — do not summarise or shorten. "
+                        f"Return ONLY the translated text, nothing else:\n\n{chapter}"}],
+                    max_tokens=1600, temperature=0.3)
+                translated = resp.choices[0].message.content.strip()
+                wc_orig = len(chapter.split())
+                wc_trans = len(translated.split())
+                # Sanity check: translation should be roughly same length
+                if wc_trans < wc_orig * 0.5 and attempt < 2:
+                    print(f"     ⚠️ Translation too short ({wc_trans}/{wc_orig} words), retry...")
+                    continue
+                translated_chapters.append(translated)
+                print(f"     ✅ {wc_trans} words")
+                break
+            except Exception as e:
+                print(f"     ⚠️ Attempt {attempt+1} failed: {e}")
+                if attempt == 2:
+                    # Fallback: keep original English chapter
+                    translated_chapters.append(chapter)
+        import time as _t2; _t2.sleep(1)
+
+    translated_script = "\n\n[PAUSE]\n\n".join(translated_chapters)
+    total_wc = len(translated_script.split())
+    print(f"  ✅ Translation complete: {total_wc} words (~{total_wc//150} min)")
 
     # FIX: Translate shorts and metadata using structured JSON output
     meta_prompt = f"""Translate ALL of the following to {lang_name}.
@@ -1744,6 +1780,37 @@ def save_playlist_cache(cache):
         json.dump(cache, f, indent=2)
 
 # Playlist definitions — one per topic, SEO-optimised titles
+# ── PLAYLIST DESCRIPTIONS PER LANGUAGE ─────────────────────────────────────
+# YouTube indexes playlist titles AND descriptions for search.
+# Native-language descriptions rank better in each country.
+PLAYLIST_DESCRIPTIONS = {
+    "en": {
+        "template": "A collection of true crime documentaries about {topic}. New cases added daily. Subscribe: {handle}",
+        "master_title": "All True Crime Cases — Archive of Enigmas",
+        "master_desc":  "Every true crime documentary from Archive of Enigmas. New case every day. Subscribe for more.",
+    },
+    "hi": {
+        "template": "{topic} के बारे में सच्ची अपराध कहानियों का संग्रह। हर रोज़ नए मामले। Subscribe करें: {handle}",
+        "master_title": "सभी अपराध मामले — Archive of Enigmas",
+        "master_desc":  "Archive of Enigmas की सभी सच्ची अपराध कहानियां। हर दिन नया मामला। Subscribe करें।",
+    },
+    "es": {
+        "template": "Una colección de documentales de crimen real sobre {topic}. Nuevos casos cada día. Suscríbete: {handle}",
+        "master_title": "Todos los Casos de Crimen Real — Archive of Enigmas",
+        "master_desc":  "Todos los documentales de crimen real de Archive of Enigmas. Un nuevo caso cada día.",
+    },
+    "pt": {
+        "template": "Uma coleção de documentários de crime real sobre {topic}. Novos casos diariamente. Inscreva-se: {handle}",
+        "master_title": "Todos os Casos de Crime Real — Archive of Enigmas",
+        "master_desc":  "Todos os documentários de crime real do Archive of Enigmas. Um novo caso por dia.",
+    },
+    "fr": {
+        "template": "Une collection de documentaires de crime vrai sur {topic}. Nouveaux cas chaque jour. Abonnez-vous: {handle}",
+        "master_title": "Tous les Cas de Crime Vrai — Archive of Enigmas",
+        "master_desc":  "Tous les documentaires de crime vrai d'Archive of Enigmas. Un nouveau cas chaque jour.",
+    },
+}
+
 PLAYLIST_DEFINITIONS = {
     "serial":     {"en": "Serial Killers — True Crime Documentaries",
                    "hi": "सीरियल किलर — सच्ची अपराध कहानियां",
@@ -1793,27 +1860,46 @@ PLAYLIST_DEFINITIONS = {
 }
 
 def get_or_create_playlist(yt, topic, language):
-    """Get existing playlist ID or create a new one for this topic+language."""
-    cache = load_playlist_cache()
+    """
+    Get existing playlist ID or create a new one for this topic+language.
+    - Playlist title: native language (Hindi/Spanish/Portuguese/French/English)
+    - Playlist description: native language for SEO in each country
+    - Master "All Cases" playlist also created per language
+    """
+    cache     = load_playlist_cache()
     cache_key = f"{topic}_{language}"
     if cache_key in cache:
         print(f"  📋 Using cached playlist: {cache[cache_key]}")
         return cache[cache_key]
 
-    topic_key = topic if topic in PLAYLIST_DEFINITIONS else "default"
+    # Get native-language title
+    topic_key   = topic if topic in PLAYLIST_DEFINITIONS else "default"
     lang_titles = PLAYLIST_DEFINITIONS[topic_key]
-    pl_title = lang_titles.get(language, lang_titles["en"])
+    pl_title    = lang_titles.get(language, lang_titles["en"])
 
-    pl_desc = (f"A collection of true crime documentaries about {topic_key} cases. "
-               f"New episodes added daily. Subscribe for more: {config.CHANNEL_HANDLE}")
+    # Get native-language description
+    lang_desc_cfg = PLAYLIST_DESCRIPTIONS.get(language, PLAYLIST_DESCRIPTIONS["en"])
+
+    if topic == "default":
+        # Master playlist — use the dedicated master title/desc
+        pl_title = lang_desc_cfg["master_title"]
+        pl_desc  = lang_desc_cfg["master_desc"] + f" {config.CHANNEL_HANDLE}"
+    else:
+        pl_desc = lang_desc_cfg["template"].format(
+            topic=topic_key,
+            handle=config.CHANNEL_HANDLE
+        )
+
     try:
         resp = yt.playlists().insert(
             part="snippet,status",
             body={
                 "snippet": {
-                    "title":          pl_title[:100],
-                    "description":    pl_desc,
+                    "title":           pl_title[:100],
+                    "description":     pl_desc[:500],
                     "defaultLanguage": language,
+                    "tags":            [topic_key, "true crime", "documentary",
+                                        language, config.CHANNEL_NAME],
                 },
                 "status": {"privacyStatus": "public"}
             }
@@ -1821,7 +1907,7 @@ def get_or_create_playlist(yt, topic, language):
         pl_id = resp["id"]
         cache[cache_key] = pl_id
         save_playlist_cache(cache)
-        print(f"  ✅ Created playlist: '{pl_title}' → {pl_id}")
+        print(f"  ✅ Created [{language.upper()}] playlist: '{pl_title}'")
         return pl_id
     except Exception as e:
         print(f"  ⚠️ Playlist create failed: {e}")
