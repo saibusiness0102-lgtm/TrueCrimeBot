@@ -659,9 +659,10 @@ def generate_script(story, language="en"):
     """
     v18 FINAL: 5 calls to llama-3.1-8b-instant.
     - 8b has 131,072 TPM → zero truncation risk (70b only has 6,000 TPM)
-    - 8 paragraphs × 5 sentences × ~110 words = ~880 words/chapter
-    - 5 chapters × 880 = ~4,400 words = ~29 minutes
-    - max_tokens=1400 gives full headroom per chapter
+    - 5 paragraphs × 5 sentences × ~110 words = ~550 words/chapter
+    - 5 chapters × 550 = ~2,750 words = ~13-14 minutes
+    - Safe under YouTube 15-min limit for unverified accounts
+    - After verifying account: increase to 8 paragraphs for 20+ min videos
     - Retry logic: if chapter < 400 words, retry up to 3x
     """
     import time as _time
@@ -688,8 +689,8 @@ Write the opening HOOK for a video about: {case}
 Context: {context[:700]}
 {lang_instruction}
 
-Write EXACTLY 8 paragraphs. Each paragraph must have EXACTLY 5 sentences.
-That is 40 sentences total. Do not stop before 40 sentences.
+Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
+That is 20 sentences total. Do not stop before 20 sentences.
 
 Paragraph 1: Open MID-ACTION — the most shocking moment. Name exact date, time, location.
 Paragraph 2: Describe the scene in vivid cinematic detail.
@@ -710,8 +711,8 @@ Write the BACKGROUND chapter for a video about: {case}
 Context: {context[:1500]}
 {lang_instruction}
 
-Write EXACTLY 8 paragraphs. Each paragraph must have EXACTLY 5 sentences.
-That is 40 sentences total. Do not stop before 40 sentences.
+Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
+That is 20 sentences total. Do not stop before 20 sentences.
 
 Paragraph 1: Who was the central person in this case? Name, age, where they lived.
 Paragraph 2: Describe their daily life — job, family, personality.
@@ -732,8 +733,8 @@ Write THE CRIME chapter for a video about: {case}
 Context: {context}
 {lang_instruction}
 
-Write EXACTLY 8 paragraphs. Each paragraph must have EXACTLY 5 sentences.
-That is 40 sentences total. Do not stop before 40 sentences.
+Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
+That is 20 sentences total. Do not stop before 20 sentences.
 
 Paragraph 1: Set the exact scene — date, time, location, weather.
 Paragraph 2: The sequence of events leading up to the crime.
@@ -754,8 +755,8 @@ Write THE INVESTIGATION chapter for a video about: {case}
 Context: {context}
 {lang_instruction}
 
-Write EXACTLY 8 paragraphs. Each paragraph must have EXACTLY 5 sentences.
-That is 40 sentences total. Do not stop before 40 sentences.
+Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
+That is 20 sentences total. Do not stop before 20 sentences.
 
 Paragraph 1: How did police first respond?
 Paragraph 2: The key piece of evidence that changed everything.
@@ -776,8 +777,8 @@ Write the FINAL CHAPTER for a video about: {case}
 Context: {context}
 {lang_instruction}
 
-Write EXACTLY 8 paragraphs. Each paragraph must have EXACTLY 5 sentences.
-That is 40 sentences total. Do not stop before 40 sentences.
+Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
+That is 20 sentences total. Do not stop before 20 sentences.
 
 Paragraph 1: The twist or revelation nobody predicted.
 Paragraph 2: More detail on the twist.
@@ -834,10 +835,10 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
     print(f"  📊 Total: {total_wc} words → ~{est_mins} min")
 
     # If still under 20 min, force-extend the shortest chapter
-    if est_mins < 20:
+    if est_mins < 11:
         shortest_idx  = min(range(len(chapter_texts)), key=lambda x: len(chapter_texts[x].split()))
         shortest_name = CHAPTERS[shortest_idx]["name"]
-        print(f"  ⚠️ Under 20 min — extending [{shortest_name}]...")
+        print(f"  ⚠️ Under 11 min — extending [{shortest_name}]...")
         try:
             ext = groq_create_with_retry(
                 client,
@@ -1381,6 +1382,14 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     print(f"\n🎬 Step 10: Assembling {W}x{H} documentary video...")
     audio     = AudioFileClip(audio_path)
     total_dur = audio.duration
+
+    # Hard cap at 14:30 — YouTube unverified accounts have 15-min limit
+    # After verifying your account (phone), remove this cap for 20+ min videos
+    MAX_DURATION = 14.5 * 60  # 14 min 30 sec
+    if total_dur > MAX_DURATION:
+        print(f"  ✂️  Trimming audio from {total_dur/60:.1f} min to {MAX_DURATION/60:.1f} min (YouTube unverified limit)")
+        audio = audio.subclip(0, MAX_DURATION)
+        total_dur = MAX_DURATION
 
     print(f"  ⏱️  Duration : {total_dur/60:.1f} minutes")
     print(f"  📸 Images   : {len(image_paths)}")
