@@ -978,7 +978,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
                            story.get("title",""))
     place_m = [p for p in place_m if p not in
                ("The","She","He","They","What","Who","How","Why","This","That")][:3]
-    raw_tags = [t.strip() for t in metadata["tags"].split(",")]
+    raw_tags = [t.strip().lstrip("#") for t in metadata["tags"].split(",") if t.strip()]
     bonus    = ([f"true crime {y}" for y in list(dict.fromkeys(year_m))[:2]] +
                 [f"{p} crime" for p in place_m])
     metadata["tags_list"] = (raw_tags + bonus)[:35]
@@ -1956,7 +1956,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
     if is_short:
         title       = f"#Shorts {title}"[:100]
         description = f"🔴 {title}\n\n{metadata.get('hashtags','')}\n\n#Shorts\n\n🔔 Subscribe → {config.CHANNEL_HANDLE}"
-        tags        = metadata.get("tags_list",[]) + ["Shorts","TrueCrimeShorts","#Shorts"]
+        tags        = metadata.get("tags_list",[]) + ["Shorts","TrueCrimeShorts","true crime shorts"]
     else:
         description = metadata.get("full_description","")
         tags        = metadata.get("tags_list",[])
@@ -1967,7 +1967,11 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         "snippet": {
             "title":                title,
             "description":          description,
-            "tags":                 tags[:500],
+            "tags":                 [
+                    t.lstrip("#").strip()[:100]
+                    for t in tags
+                    if t and t.strip() and len(t.strip().lstrip("#")) > 0
+                ][:500],
             "categoryId":           "25",          # News & Politics (best for true crime)
             "defaultLanguage":      language,
             "defaultAudioLanguage": language,
