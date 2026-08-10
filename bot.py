@@ -1,13 +1,26 @@
 # ============================================
-# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v11 GROWTH
+# ARCHIVE OF ENIGMAS — DOCUMENTARY BOT v12 GROWTH
 # 20-min videos | 1080p | English-First | Peak SEO
-# Fixes v11:
+# Fixes v12 (this version):
+#   - Script prompts now GROUNDED: only narrate what's in the source
+#     content, no invented witness quotes / forensic detail / scene
+#     specifics. Lower temperature for less embellishment.
+#   - Burned-in captions using edge-tts word-boundary timestamps.
+#   - Audio mastering pass (ffmpeg loudnorm) for consistent voice level.
+#   - Varied cut pacing (no more fixed 8s/14s every slot) + a
+#     procedural timeline-card graphic mixed into chapter breaks.
+#   - REMOVED the synthetic "engagement" comment that simulated
+#     viewer debate — kept only the genuinely useful chapters comment.
+# Carried over from v11:
 #   - Wikipedia-first (no more multilingual RSS stories)
 #   - Bebas Neue font download for viral thumbnails
 #   - Stronger title prompt with proven formats
-#   - Working background music URLs
 #   - Better Wikipedia case list (more viral/trending cases)
 #   - Upload history tracked across ALL languages
+#
+# REQUIRES: ffmpeg installed on the runner (for audio mastering).
+#   GitHub Actions: add a step `sudo apt-get update && sudo apt-get
+#   install -y ffmpeg` before the Python step.
 # ============================================
 
 import os
@@ -18,6 +31,7 @@ import math
 import random
 import shutil
 import asyncio
+import subprocess
 import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance, ImageFilter
@@ -40,8 +54,7 @@ if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.LANCZOS
 
 # ============================================
-# v11 FIX: FONT DOWNLOAD — Bebas Neue for viral thumbnails
-# LiberationSans looks generic; Bebas Neue looks like Netflix/crime docs
+# FONT DOWNLOAD — Bebas Neue for viral thumbnails
 # ============================================
 
 def ensure_bebas_font():
@@ -87,7 +100,6 @@ def save_history(h):
 
 def update_history(title, topic_type, keywords, lang="en"):
     h = load_history()
-    # v11 FIX: Track history for ALL languages to prevent cross-language duplicates
     entry = f"[{lang.upper()}] {title}"
     h["recent_titles"]   = ([entry] + h["recent_titles"])[:20]
     h["recent_topics"]   = ([topic_type] + h["recent_topics"])[:10]
@@ -103,7 +115,6 @@ _CRIME_NOUNS = {
     "husband","family","couple","sister","brother","baby","infant",
 }
 
-# ── Keywords that MUST appear for an RSS story to qualify ────────────────
 _RSS_CRIME_REQUIRED = {
     "murder","killed","killing","homicide","manslaughter","stabbed","shooting","shot",
     "missing","disappeared","vanished","abducted","kidnapped","kidnapping",
@@ -114,7 +125,6 @@ _RSS_CRIME_REQUIRED = {
 }
 
 def is_crime_story(title, content):
-    """Return True only if the story contains at least one crime keyword."""
     text = (title + " " + content).lower()
     return any(kw in text for kw in _RSS_CRIME_REQUIRED)
 
@@ -185,7 +195,6 @@ def fetch_from_rss():
             for entry in entries:
                 content = entry.get("summary","") or entry.get("description","")
                 if len(content) > 300:
-                    # FIX: Only accept genuine crime stories
                     if not is_crime_story(entry.title, content):
                         print(f"  ⏭️  Skipping non-crime story: {entry.title[:60]}")
                         continue
@@ -201,7 +210,6 @@ def fetch_from_wikipedia():
     h = load_history()
     used_keywords = set(h.get("recent_keywords", []))
     cases = [
-        # ── Classic Serial Killers ────────────────────────────────────
         "Zodiac Killer","Jack the Ripper","Golden State Killer","Ted Bundy",
         "Jeffrey Dahmer","John Wayne Gacy","BTK killer","Gary Ridgway",
         "Samuel Little","Ed Kemper","Richard Ramirez","Dean Corll",
@@ -209,7 +217,6 @@ def fetch_from_wikipedia():
         "Charles Manson","Pedro Lopez","Luis Garavito","John Edward Robinson",
         "Israel Keyes","Randy Kraft","Gerard Schaefer","Dennis Nilsen",
         "Peter Sutcliffe","Robert Pickton","Paul Bernardo","Herb Baumeister",
-        # ── Viral True Crime (high YouTube search volume) ────────────
         "Chris Watts murders","JonBenet Ramsey","Gabby Petito case",
         "Delphi murders","Amanda Knox","Steven Avery","Scott Peterson case",
         "Menendez brothers","Pamela Smart","Robert Durst",
@@ -221,7 +228,6 @@ def fetch_from_wikipedia():
         "Murder of Laci Peterson","Shayna Hubers case",
         "Kyle Unger wrongful conviction","Kevin Cooper case",
         "Adnan Syed case","Serial podcast murder",
-        # ── Cold Cases & Mysteries ────────────────────────────────────
         "Black Dahlia murder","Villisca axe murders","Hinterkaifeck murders",
         "Axeman of New Orleans","Cleveland torso murderer","Lizzie Borden",
         "Tylenol murders","Tamam Shud case","Dyatlov Pass incident",
@@ -232,30 +238,25 @@ def fetch_from_wikipedia():
         "Paige Rouse disappearance","Maura Murray disappearance",
         "Springfield Three disappearance","Doe Network case",
         "Asha Degree disappearance","Brandon Lawson case",
-        # ── Cults & Conspiracies ──────────────────────────────────────
         "Jonestown massacre","Heaven's Gate cult","NXIVM cult",
         "Aum Shinrikyo","Branch Davidians Waco","The Family cult Australia",
         "Order of the Solar Temple","Rajneeshee bioterror attack",
         "Children of God cult","Peoples Temple","The Ant Hill Kids",
-        # ── Famous Heists ─────────────────────────────────────────────
         "DB Cooper","Isabella Stewart Gardner Museum theft",
         "Great Train Robbery 1963","Antwerp diamond heist",
         "Hatton Garden heist","Banco Central Brazil robbery",
         "Dunbar Armored robbery","Lufthansa heist 1978",
         "French Connection drug smuggling","Pink Panthers jewel thieves",
-        # ── Fraud & White Collar ──────────────────────────────────────
         "Bernie Madoff Ponzi scheme","Enron scandal",
         "Elizabeth Holmes Theranos","Anna Sorokin fraud",
         "Harshad Mehta scam","Vijay Mallya fraud",
         "Nirav Modi diamond fraud","Frank Abagnale",
         "Sam Bankman-Fried FTX collapse","WeWork Adam Neumann fraud",
         "Billy McFarland Fyre Festival","Trevor Milton Nikola fraud",
-        # ── Kidnapping & Captivity ────────────────────────────────────
         "Jaycee Dugard kidnapping","Elizabeth Smart kidnapping",
         "Ariel Castro kidnappings","Natascha Kampusch kidnapping",
         "Patty Hearst kidnapping","Lindbergh kidnapping",
         "Fritzl case","Colleen Stan captivity","Mary Vincent attack",
-        # ── Poisonings & Assassinations ───────────────────────────────
         "Alexander Litvinenko poisoning","Salisbury Novichok attack",
         "Georgi Markov assassination","Graham Young poisoner",
         "Marie Besnard poison murders","Nannie Doss poisoner",
@@ -293,171 +294,105 @@ def extract_keywords(story):
 
     TOPIC_IMAGES = {
         "murder": [
-            "bloody crime scene investigation",
-            "forensic scientist evidence gloves",
-            "chalk outline floor crime",
-            "autopsy table dark dramatic",
-            "detective holding evidence bag",
-            "police tape house crime scene",
-            "court room judge gavel",
-            "victim memorial flowers candles",
-            "crime scene photo evidence board",
-            "prosecutor evidence courtroom dark",
+            "bloody crime scene investigation","forensic scientist evidence gloves",
+            "chalk outline floor crime","autopsy table dark dramatic",
+            "detective holding evidence bag","police tape house crime scene",
+            "court room judge gavel","victim memorial flowers candles",
+            "crime scene photo evidence board","prosecutor evidence courtroom dark",
         ],
         "missing": [
-            "missing person flyer post",
-            "search party flashlights forest night",
-            "empty swing set abandoned playground",
-            "milk carton missing child vintage",
-            "search rescue team dogs forest",
-            "abandoned child bedroom dark",
-            "candle vigil memorial night",
-            "family crying grief dark",
-            "detective studying map missing route",
-            "empty chair at table dark",
+            "missing person flyer post","search party flashlights forest night",
+            "empty swing set abandoned playground","milk carton missing child vintage",
+            "search rescue team dogs forest","abandoned child bedroom dark",
+            "candle vigil memorial night","family crying grief dark",
+            "detective studying map missing route","empty chair at table dark",
         ],
         "serial": [
-            "serial killer mugshot newspaper",
-            "detective crime board red string",
-            "prison corridor cell dramatic",
-            "victims memorial wall photographs",
-            "criminal profile document desk",
-            "FBI investigation files dark",
-            "courtroom packed dramatic verdict",
-            "dark silhouette figure stalking",
-            "phone call night dark window",
-            "evidence map pins locations crime",
+            "serial killer mugshot newspaper","detective crime board red string",
+            "prison corridor cell dramatic","victims memorial wall photographs",
+            "criminal profile document desk","FBI investigation files dark",
+            "courtroom packed dramatic verdict","dark silhouette figure stalking",
+            "phone call night dark window","evidence map pins locations crime",
         ],
         "heist": [
-            "vault door steel bank dramatic",
-            "gold bars stacks dramatic",
-            "masked robber dark dramatic",
-            "security camera footage grainy",
-            "money counting table dramatic",
-            "getaway car dramatic night",
-            "briefcase handcuff arrest",
-            "police chase night urban",
-            "stolen jewelry dramatic close",
-            "auction house valuable art dramatic",
+            "vault door steel bank dramatic","gold bars stacks dramatic",
+            "masked robber dark dramatic","security camera footage grainy",
+            "money counting table dramatic","getaway car dramatic night",
+            "briefcase handcuff arrest","police chase night urban",
+            "stolen jewelry dramatic close","auction house valuable art dramatic",
         ],
         "cult": [
-            "candles ritual dark ceremony",
-            "abandoned cult compound building",
-            "robed figures ceremony dark forest",
-            "cult leader crowd podium dramatic",
-            "bible torn pages dark dramatic",
-            "isolated rural compound aerial",
-            "brainwashing propaganda poster vintage",
-            "survivor testimony courtroom dramatic",
-            "mass grave dark documentary",
-            "FBI raid compound dramatic",
+            "candles ritual dark ceremony","abandoned cult compound building",
+            "robed figures ceremony dark forest","cult leader crowd podium dramatic",
+            "bible torn pages dark dramatic","isolated rural compound aerial",
+            "brainwashing propaganda poster vintage","survivor testimony courtroom dramatic",
+            "mass grave dark documentary","FBI raid compound dramatic",
         ],
         "unsolved": [
-            "cold case file folder dusty",
-            "unanswered questions chalkboard dark",
-            "detective staring wall evidence",
-            "old crime scene photo sepia",
-            "question mark shadow dark",
-            "file cabinet overflowing cases",
-            "mystery door locked dark",
-            "vintage newspaper headline unsolved",
-            "detective old evidence box",
-            "shadow figure foggy night vintage",
+            "cold case file folder dusty","unanswered questions chalkboard dark",
+            "detective staring wall evidence","old crime scene photo sepia",
+            "question mark shadow dark","file cabinet overflowing cases",
+            "mystery door locked dark","vintage newspaper headline unsolved",
+            "detective old evidence box","shadow figure foggy night vintage",
         ],
         "conspiracy": [
-            "classified document redacted black",
-            "surveillance camera network dark",
-            "government building night dramatic",
-            "conspiracy board newspaper clippings",
-            "shadowy figure silhouette dramatic",
-            "newspaper headline cover up dark",
-            "briefcase exchange dark alley",
-            "hacker computer screen dark",
-            "secret meeting dark room",
-            "wiretap phone surveillance dramatic",
+            "classified document redacted black","surveillance camera network dark",
+            "government building night dramatic","conspiracy board newspaper clippings",
+            "shadowy figure silhouette dramatic","newspaper headline cover up dark",
+            "briefcase exchange dark alley","hacker computer screen dark",
+            "secret meeting dark room","wiretap phone surveillance dramatic",
         ],
         "coldcase": [
-            "dusty evidence box files cold case",
-            "old polaroid photo faded dark",
-            "detective reopening old case files",
-            "vintage crime scene photograph",
-            "decades old newspaper archive",
-            "retired detective case notes dark",
-            "forensic DNA lab modern dramatic",
-            "family seeking justice courtroom",
-            "cold storage evidence room dark",
-            "witness testimony years later dramatic",
+            "dusty evidence box files cold case","old polaroid photo faded dark",
+            "detective reopening old case files","vintage crime scene photograph",
+            "decades old newspaper archive","retired detective case notes dark",
+            "forensic DNA lab modern dramatic","family seeking justice courtroom",
+            "cold storage evidence room dark","witness testimony years later dramatic",
         ],
     }
 
     TOPIC_VIDEOS = {
         "murder": [
-            "ambulance emergency lights night",
-            "police investigation crime scene",
-            "courtroom gavel dramatic close",
-            "prison sentence judge dramatic",
-            "forensic team working crime scene",
-            "detective interviewing witness",
+            "ambulance emergency lights night","police investigation crime scene",
+            "courtroom gavel dramatic close","prison sentence judge dramatic",
+            "forensic team working crime scene","detective interviewing witness",
         ],
         "missing": [
-            "search helicopter forest aerial",
-            "search party walking field night",
-            "missing poster blowing wind",
-            "empty road driving night dramatic",
-            "vigil candles crowd night",
-            "family reunion emotional dramatic",
+            "search helicopter forest aerial","search party walking field night",
+            "missing poster blowing wind","empty road driving night dramatic",
+            "vigil candles crowd night","family reunion emotional dramatic",
         ],
         "serial": [
-            "police car convoy dramatic",
-            "prison transfer van dramatic",
-            "courtroom packed trial dramatic",
-            "detective profiling board dramatic",
-            "news reporter crime scene live",
-            "handcuffed perp walk dramatic",
+            "police car convoy dramatic","prison transfer van dramatic",
+            "courtroom packed trial dramatic","detective profiling board dramatic",
+            "news reporter crime scene live","handcuffed perp walk dramatic",
         ],
         "heist": [
-            "bank vault door dramatic",
-            "police chase urban night",
-            "money counting dramatic",
-            "getaway car speeding night",
-            "police roadblock dramatic",
-            "news helicopter aerial dramatic",
+            "bank vault door dramatic","police chase urban night",
+            "money counting dramatic","getaway car speeding night",
+            "police roadblock dramatic","news helicopter aerial dramatic",
         ],
         "cult": [
-            "forest dark night dramatic",
-            "crowd chanting dramatic",
-            "abandoned building interior dark",
-            "smoke fire ritual dramatic",
-            "documentary interview dramatic",
-            "police raid building dramatic",
+            "forest dark night dramatic","crowd chanting dramatic",
+            "abandoned building interior dark","smoke fire ritual dramatic",
+            "documentary interview dramatic","police raid building dramatic",
         ],
         "default": [
-            "dark rainy city night",
-            "fog forest dark eerie",
-            "storm lightning dramatic dark",
-            "dark ocean waves night",
-            "fire dark night dramatic",
-            "dark road night driving",
-            "smoke dark atmospheric",
-            "rain window dark dramatic",
-            "dark alley night cinematic",
-            "thunder clouds dark dramatic",
+            "dark rainy city night","fog forest dark eerie",
+            "storm lightning dramatic dark","dark ocean waves night",
+            "fire dark night dramatic","dark road night driving",
+            "smoke dark atmospheric","rain window dark dramatic",
+            "dark alley night cinematic","thunder clouds dark dramatic",
         ],
     }
 
     UNIVERSAL_IMAGES = [
-        "dark dramatic cinematic shadows",
-        "vintage sepia photograph dark room",
-        "candlelight dark atmospheric room",
-        "old typewriter dark dramatic",
-        "magnifying glass clue mystery",
-        "shadow window rain night",
-        "dark cemetery fog night",
-        "old clock dramatic dark",
-        "newspaper archive reading dark",
-        "leather journal pen dark desk",
-        "radio vintage dark room dramatic",
-        "telephone vintage dramatic dark",
+        "dark dramatic cinematic shadows","vintage sepia photograph dark room",
+        "candlelight dark atmospheric room","old typewriter dark dramatic",
+        "magnifying glass clue mystery","shadow window rain night",
+        "dark cemetery fog night","old clock dramatic dark",
+        "newspaper archive reading dark","leather journal pen dark desk",
+        "radio vintage dark room dramatic","telephone vintage dramatic dark",
     ]
 
     topic = story.get("topic", "other")
@@ -617,57 +552,59 @@ def fetch_videos(queries, target=14):
 
 
 # ============================================
-# ============================================
 # GROQ RATE-LIMIT RETRY WRAPPER
 # ============================================
 import time as _time
 
 def groq_create_with_retry(client, max_retries=6, **kwargs):
-    """
-    Drop-in wrapper for client.chat.completions.create that automatically
-    retries on 429 RateLimitError.
-    - TPM (per-minute) limit: sleeps the exact wait time Groq reports, retries up to max_retries.
-    - TPD (per-day)    limit: exits immediately — no point burning Actions minutes waiting 2+ hrs.
-    """
     from groq import RateLimitError
     for attempt in range(max_retries):
         try:
             return client.chat.completions.create(**kwargs)
         except RateLimitError as e:
             err_str = str(e)
-            # Daily quota exhausted — bail immediately, not retryable within this run
             if "tokens per day" in err_str or "TPD" in err_str:
                 print("🚫 Groq daily token quota (100k TPD) exhausted.")
                 print("   ➡  Upgrade at https://console.groq.com/settings/billing")
                 print("   ⏭  Skipping today's run — will retry tomorrow.")
-                sys.exit(0)   # exit 0 so GitHub Actions doesn't flag as failure
+                sys.exit(0)
             if attempt == max_retries - 1:
                 raise
-            # TPM (per-minute) — parse exact wait from error message
             match = re.search(r'try again in ([\d.]+)s', err_str)
             if match:
-                wait = float(match.group(1)) + 2   # small buffer
+                wait = float(match.group(1)) + 2
             else:
-                wait = min(5 * 2 ** attempt, 120)  # exponential backoff, cap 2 min
+                wait = min(5 * 2 ** attempt, 120)
             print(f"  ⏳ Rate limit hit — waiting {wait:.1f}s then retrying "
                   f"(attempt {attempt + 1}/{max_retries})...")
             _time.sleep(wait)
 
-# STEP 5 — GENERATE SCRIPT (20-min TARGET)
+
+# ============================================
+# STEP 5 — GENERATE SCRIPT (GROUNDED, 20-min TARGET)
+# ============================================
+# CHANGED: every chapter instruction now forces the model to base
+# claims only on the provided context and to flag anything not in the
+# source as unknown/speculated rather than inventing it. Temperature
+# lowered from 0.88 -> 0.75 to reduce embellishment. Structure
+# (5 chapters, ~4 paragraphs of 5 sentences, [PAUSE] joins, retry-if-
+# too-short logic) is unchanged so duration math and downstream
+# chunking still work exactly as before.
 # ============================================
 
+GROUNDING_RULE = (
+    "CRITICAL ACCURACY RULE: Base every factual claim ONLY on the context "
+    "provided below. Do not invent names, quotes, dialogue, exact times, "
+    "or forensic details that are not in the context. You MAY use general "
+    "atmospheric/scene-setting language (weather, mood, tension) that is "
+    "not fact-checkable, but you must NOT present invented specifics as "
+    "fact. If the context does not cover something, say it is unknown or "
+    "undocumented rather than stating it outright."
+)
+
 def generate_script(story, language="en"):
-    """
-    v18 FINAL: 5 calls to llama-3.1-8b-instant.
-    - 8b has 131,072 TPM → zero truncation risk (70b only has 6,000 TPM)
-    - 5 paragraphs × 5 sentences × ~110 words = ~550 words/chapter
-    - 5 chapters × 550 = ~2,750 words = ~13-14 minutes
-    - Safe under YouTube 15-min limit for unverified accounts
-    - After verifying account: increase to 8 paragraphs for 20+ min videos
-    - Retry logic: if chapter < 400 words, retry up to 3x
-    """
     import time as _time
-    print(f"\n✍️  Step 5: Generating 20-min script ({language.upper()})...")
+    print(f"\n✍️  Step 5: Generating grounded 20-min script ({language.upper()})...")
     h = load_history()
     recent_titles_str = ", ".join(h["recent_titles"][:5]) if h["recent_titles"] else "none yet"
     client     = Groq(api_key=config.GROQ_API_KEY)
@@ -679,116 +616,116 @@ def generate_script(story, language="en"):
         lang_instruction = f"Write ENTIRELY in {lang_info.get('name', 'English')} language."
 
     case    = story["title"]
-    context = story.get("content", "")[:2500]
+    context = story.get("content", "")[:3000]
 
     CHAPTERS = [
         {
             "name": "HOOK",
-            "paras": 8,
             "instruction": f"""You are the narrator for a true crime YouTube channel.
-Write the opening HOOK for a video about: {case}
-Context: {context[:700]}
+{GROUNDING_RULE}
+Case: {case}
+Context: {context[:900]}
 {lang_instruction}
 
 Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
 That is 20 sentences total. Do not stop before 20 sentences.
 
-Paragraph 1: Open MID-ACTION — the most shocking moment. Name exact date, time, location.
-Paragraph 2: Describe the scene in vivid cinematic detail.
-Paragraph 3: Describe the victim or perpetrator in this moment.
-Paragraph 4: What did witnesses see or hear?
-Paragraph 5: The first responders arrive. What did they find?
-Paragraph 6: Say these words: "Before we go further — hit subscribe and the bell. We post new cases every single day."
-Paragraph 7: "Let me take you back to the very beginning of this story..."
-Paragraph 8: Introduce the backstory — set up what viewers are about to learn.
+Paragraph 1: Open with the most consequential moment IN THE CONTEXT. Use only dates/locations that appear in the context — describe generally rather than inventing a specific if the context doesn't give one.
+Paragraph 2: Describe the scene using only atmosphere/mood language, not invented facts.
+Paragraph 3: Describe the victim or perpetrator using only traits stated in the context.
+Paragraph 4: Summarize what is actually documented about how the case became known — no invented witness quotes.
+Paragraph 5: Say these words: "Before we go further — hit subscribe and the bell. We post new cases every single day."
+Paragraph 6: "Let me take you back to the beginning of what's documented about this case..."
+Paragraph 7: Introduce the backstory, grounded in the context only.
+Paragraph 8: Transition line setting up the background chapter.
 
 IMPORTANT: Write ONLY the spoken words. No labels. No markdown. No chapter headings."""
         },
         {
             "name": "BACKGROUND",
-            "paras": 8,
             "instruction": f"""You are the narrator for a true crime YouTube channel.
-Write the BACKGROUND chapter for a video about: {case}
-Context: {context[:1500]}
+{GROUNDING_RULE}
+Case: {case}
+Context: {context[:1800]}
 {lang_instruction}
 
 Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
 That is 20 sentences total. Do not stop before 20 sentences.
 
-Paragraph 1: Who was the central person in this case? Name, age, where they lived.
-Paragraph 2: Describe their daily life — job, family, personality.
-Paragraph 3: What made them likeable, relatable, or sympathetic?
-Paragraph 4: Their relationships — who did they trust?
-Paragraph 5: The months or weeks leading up to the incident. What changed?
-Paragraph 6: First warning signs that something was wrong.
-Paragraph 7: Who noticed? Who was ignored?
-Paragraph 8: End with a cliffhanger question that forces the viewer to keep watching.
+Paragraph 1: Who was the central person in this case, per the context — name, age, location if given.
+Paragraph 2: Documented facts about their daily life — job, family — omit anything not in the context.
+Paragraph 3: General, non-invented framing of how they were perceived by others.
+Paragraph 4: Relationships mentioned in the context — who they were close to.
+Paragraph 5: Documented events in the weeks or months leading up to the incident.
+Paragraph 6: Any documented warning signs — if none are in the context, say the record is unclear rather than inventing one.
+Paragraph 7: Who is documented as having noticed or responded, or state if this isn't documented.
+Paragraph 8: End with a genuine question inviting the viewer to keep watching.
 
 IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         },
         {
-            "name": "THE CRIME",
-            "paras": 8,
+            "name": "THE CASE",
             "instruction": f"""You are the narrator for a true crime YouTube channel.
-Write THE CRIME chapter for a video about: {case}
+{GROUNDING_RULE}
+Case: {case}
 Context: {context}
 {lang_instruction}
 
 Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
 That is 20 sentences total. Do not stop before 20 sentences.
 
-Paragraph 1: Set the exact scene — date, time, location, weather.
-Paragraph 2: The sequence of events leading up to the crime.
-Paragraph 3: What happened — step by step.
-Paragraph 4: The most shocking single detail of the crime. The fact viewers will screenshot.
-Paragraph 5: Immediate reactions. First person to discover what happened.
+Paragraph 1: Set the scene using only documented date, time, location, circumstances.
+Paragraph 2: The documented sequence of events leading up to the incident.
+Paragraph 3: What is documented to have happened, step by step, without invented detail.
+Paragraph 4: The single most notable documented fact — not an invented "shocking" detail.
+Paragraph 5: Documented immediate reactions and who discovered what happened.
 Paragraph 6: Ask viewers: "Comment below — what do you think really happened here?"
-Paragraph 7: The full scale of what occurred becomes clear.
-Paragraph 8: End with a cliffhanger leading into the investigation.
+Paragraph 7: The documented scale or scope of the case as it became clear.
+Paragraph 8: End with a transition into the investigation, grounded only in the context.
 
 IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         },
         {
             "name": "INVESTIGATION",
-            "paras": 8,
             "instruction": f"""You are the narrator for a true crime YouTube channel.
-Write THE INVESTIGATION chapter for a video about: {case}
+{GROUNDING_RULE}
+Case: {case}
 Context: {context}
 {lang_instruction}
 
 Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
 That is 20 sentences total. Do not stop before 20 sentences.
 
-Paragraph 1: How did police first respond?
-Paragraph 2: The key piece of evidence that changed everything.
-Paragraph 3: Who were the main suspects?
-Paragraph 4: The red herring — the lead that wasted months of investigation.
-Paragraph 5: The biggest mistake investigators made.
-Paragraph 6: How the community reacted.
-Paragraph 7: Ask viewers: "Drop your theory in the comments — who do YOU think did it?"
-Paragraph 8: The turning point — or the moment hope faded.
+Paragraph 1: How police or investigators are documented to have first responded.
+Paragraph 2: The key documented piece of evidence, if the context describes one.
+Paragraph 3: Documented suspects — only if named in the context; otherwise describe the investigative approach generally.
+Paragraph 4: Any documented false leads or dead ends in the investigation.
+Paragraph 5: Documented setbacks or mistakes, if described in the context.
+Paragraph 6: How the community is documented to have reacted.
+Paragraph 7: Ask viewers: "Drop your theory in the comments — who do YOU think was responsible?"
+Paragraph 8: The documented turning point — or state plainly that the case remained unresolved if that's accurate.
 
 IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         },
         {
-            "name": "REVELATIONS AND OUTRO",
-            "paras": 8,
+            "name": "OUTCOME AND OUTRO",
             "instruction": f"""You are the narrator for a true crime YouTube channel.
-Write the FINAL CHAPTER for a video about: {case}
+{GROUNDING_RULE}
+Case: {case}
 Context: {context}
 {lang_instruction}
 
 Write EXACTLY 4 paragraphs. Each paragraph must have EXACTLY 5 sentences.
 That is 20 sentences total. Do not stop before 20 sentences.
 
-Paragraph 1: The twist or revelation nobody predicted.
-Paragraph 2: More detail on the twist.
-Paragraph 3: The verdict or current cold-case status.
-Paragraph 4: What happened to the key people after?
-Paragraph 5: The lasting impact — what changed because of this case?
-Paragraph 6: First debate question: ask viewers to comment A or B on a controversial aspect.
-Paragraph 7: Second debate question: another controversial angle viewers will argue about.
-Paragraph 8: "If this case gave you chills, hit subscribe — we post a new case every single day. Our next video is on screen right now. See you there."
+Paragraph 1: The documented resolution, verdict, or current status — including "unsolved" or "cold case" if that is accurate. Do not invent a resolution that isn't in the context.
+Paragraph 2: Further documented detail on that outcome.
+Paragraph 3: What is documented about what happened to the key people afterward.
+Paragraph 4: Documented broader impact, only if the context describes one.
+Paragraph 5: The lasting significance of the case, framed honestly — say if the impact is unclear or undocumented.
+Paragraph 6: A genuine discussion question about a documented ambiguity in the case.
+Paragraph 7: A second discussion question about a different documented angle.
+Paragraph 8: "If this case interested you, hit subscribe — we post a new case every single day. Our next video is on screen right now. See you there."
 
 IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         },
@@ -807,7 +744,7 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
                     model=fast_model,
                     messages=[{"role": "user", "content": ch["instruction"]}],
                     max_tokens=1400,
-                    temperature=0.88
+                    temperature=0.75   # lowered from 0.88 to reduce embellishment
                 )
                 text = resp.choices[0].message.content.strip()
                 wc   = len(text.split())
@@ -825,7 +762,7 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
 
         if not chapter_text:
             print(f"     ❌ Chapter {i+1} failed — using placeholder")
-            chapter_text = f"This chapter covers the {ch['name'].lower()} of the {case} case."
+            chapter_text = f"This chapter covers the {ch['name'].lower()} of the {case} case, based on publicly documented information."
 
         chapter_texts.append(chapter_text)
         if i < len(CHAPTERS) - 1:
@@ -835,7 +772,6 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
     est_mins = total_wc // 150
     print(f"  📊 Total: {total_wc} words → ~{est_mins} min")
 
-    # If still under 20 min, force-extend the shortest chapter
     if est_mins < 11:
         shortest_idx  = min(range(len(chapter_texts)), key=lambda x: len(chapter_texts[x].split()))
         shortest_name = CHAPTERS[shortest_idx]["name"]
@@ -845,10 +781,12 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
                 client,
                 model=fast_model,
                 messages=[{"role": "user", "content":
+                    f"{GROUNDING_RULE}\n"
                     f"Write 8 more paragraphs of 5 sentences each continuing this section "
-                    f"about {case}. Add more vivid detail, quotes, and context. "
+                    f"about {case}, based only on this context: {context}\n"
+                    f"Add more documented detail and context — do not invent facts. "
                     f"Write ONLY spoken narration. {lang_instruction}"}],
-                max_tokens=1400, temperature=0.88)
+                max_tokens=1400, temperature=0.75)
             ext_text = ext.choices[0].message.content.strip()
             chapter_texts[shortest_idx] += "\n\n" + ext_text
             script   = "\n\n[PAUSE]\n\n".join(chapter_texts)
@@ -857,23 +795,26 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         except Exception as e:
             print(f"  ⚠️ Extension failed: {e}")
 
-    # ── METADATA (70b — better title quality, small call so within 6k TPM) ──
+    # ── METADATA (grounded in the script itself, not free invention) ────────
     print("  🏷️  Generating metadata...")
     title_formats = "\n".join(f"  • {f}" for f in
                                getattr(config, "HIGH_PERFORMING_TITLE_FORMATS", []))
     meta_prompt = f"""Write YouTube metadata for a true crime video about: {case}
+Base every claim ONLY on what a viewer would learn from this script — do not invent extra facts:
+{script[:1500]}
+
 {lang_instruction}
 Avoid titles similar to: {recent_titles_str}
 
 TITLE: (Under 70 chars. Must use one of:
 {title_formats}
-Must include real name or location. BAD: "Dark Case". GOOD: "The Man Who Fooled Investors for 20 Years")
-DESCRIPTION: (200 words SEO-rich. What happened, why shocking, key search terms)
+Must include real name or location. Factual — no invented superlatives beyond what's documented.)
+DESCRIPTION: (200 words SEO-rich. What happened, why notable, key search terms)
 TAGS: (25 comma-separated true crime search terms)
-THUMBNAIL_TEXT: (2-4 ALL-CAPS specific words. BAD: "DARK CASE". GOOD: "NO ONE BELIEVED HER")
+THUMBNAIL_TEXT: (2-4 ALL-CAPS specific words, grounded in documented facts)
 THUMBNAIL_MOOD: dark
 THUMBNAIL_STYLE: (1, 2, 3, or 4)
-PINNED_COMMENT: (One divisive debate question that sparks A vs B argument)
+PINNED_COMMENT: (One genuine discussion question about a documented ambiguity)
 COMMUNITY_POST: (40-word community post with poll)
 CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 
@@ -883,7 +824,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
             client,
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content": meta_prompt}],
-            max_tokens=900, temperature=0.75)
+            max_tokens=900, temperature=0.6)
         meta_raw = meta_resp.choices[0].message.content
         cur_key, cur_val = None, []
         for line in meta_raw.strip().split("\n"):
@@ -906,28 +847,29 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 
     metadata.setdefault("title", story["title"])
     metadata.setdefault("description", f"True crime: {story['title']}")
-    metadata.setdefault("tags", "true crime,mystery,unsolved,dark cases")
-    metadata.setdefault("thumbnail_text", "DARK CASE")
+    metadata.setdefault("tags", "true crime,documentary,case files")
+    metadata.setdefault("thumbnail_text", story["title"].upper()[:30])
     metadata.setdefault("thumbnail_mood", "dark")
     metadata.setdefault("thumbnail_style", random.choice(config.THUMBNAIL_STYLES))
-    metadata.setdefault("pinned_comment", "What do YOU think happened? Drop your theory 👇")
-    metadata.setdefault("community_post", f"New case: {story['title']}. Was justice served?")
+    metadata.setdefault("pinned_comment", "What do you think happened here?")
+    metadata.setdefault("community_post", f"New case: {story['title']}.")
     metadata["topic"] = story.get("topic", "default")
 
-    # ── SHORTS ───────────────────────────────────────────────────────────────
+    # ── SHORTS (also grounded) ───────────────────────────────────────────────
     shorts_script = ""
     try:
         sh = groq_create_with_retry(
             client,
             model=fast_model,
             messages=[{"role": "user", "content":
-                f"Write a YouTube Shorts script about: {case}. "
+                f"{GROUNDING_RULE}\n"
+                f"Write a YouTube Shorts script about: {case}, based only on this context: {context[:1000]}\n"
                 f"Exactly 3 paragraphs of 3 sentences each (9 sentences total, ~140 words). "
-                f"Para 1: shocking hook — first 3 words must be gripping. "
-                f"Para 2: the key shocking facts. "
-                f"Para 3: twist + 'Follow for daily mysteries.' "
+                f"Para 1: a factual, attention-grabbing opening line. "
+                f"Para 2: the key documented facts. "
+                f"Para 3: the documented outcome/status + 'Follow for more real cases.' "
                 f"ONLY spoken words. {lang_instruction}"}],
-            max_tokens=300, temperature=0.88)
+            max_tokens=300, temperature=0.7)
         shorts_script = sh.choices[0].message.content.strip()
         print(f"  📱 Shorts: {len(shorts_script.split())} words")
     except Exception as e:
@@ -950,7 +892,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
         topic_seo[:4] + global_seo[:4] + lang_seo[:4]))[:10])
 
     chapters_text = metadata.get("chapters",
-        "0:00 Hook\n3:00 Background\n8:00 The Crime\n14:00 Investigation\n19:00 Revelations")
+        "0:00 Hook\n3:00 Background\n8:00 The Case\n14:00 Investigation\n19:00 Outcome")
 
     metadata["full_description"] = f"""{metadata['description']}
 
@@ -960,8 +902,8 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 {end_screen}
 
 🔔 Subscribe → {config.CHANNEL_HANDLE}
-👍 Like if this gave you chills
-💬 Drop your theory — we read every comment
+👍 Like if this case interested you
+💬 Share your thoughts — we read every comment
 🔕 Notifications on — new case every day
 
 {hashtags}
@@ -970,7 +912,8 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 {seo_block}
 ─────────────────────────────────
 
-© {config.CHANNEL_NAME} — Educational purposes only. Based on public records."""
+Sources: publicly available records and reporting.
+© {config.CHANNEL_NAME} — Educational purposes only."""
 
     import re as _re
     year_m  = _re.findall(r'\b(19|20)\d{2}\b',
@@ -989,12 +932,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
 
 
 def translate_script(script, shorts_script, metadata, target_lang):
-    """
-    v19 FIX: Translate script in CHAPTERS — no truncation.
-    Old code used script[:4000] = 667 words = 4-minute video.
-    Fix: split on [PAUSE] markers, translate each chapter separately,
-    then rejoin. Each chapter ~700 words = well within token limits.
-    """
+    """Unchanged from original — translates chapter-by-chapter to avoid truncation."""
     if target_lang == "en":
         return script, shorts_script, metadata
 
@@ -1005,7 +943,6 @@ def translate_script(script, shorts_script, metadata, target_lang):
     client    = Groq(api_key=config.GROQ_API_KEY)
     fast_model = getattr(config, "GROQ_MODEL_FAST", config.GROQ_MODEL)
 
-    # Split script into chapters on [PAUSE] markers
     chapters = [c.strip() for c in script.split("[PAUSE]") if c.strip()]
     print(f"  📚 Translating {len(chapters)} chapters...")
 
@@ -1019,14 +956,13 @@ def translate_script(script, shorts_script, metadata, target_lang):
                     model=fast_model,
                     messages=[{"role": "user", "content":
                         f"Translate this true crime narration to {lang_name}. "
-                        f"Keep the exact dramatic tone and pacing. "
+                        f"Keep the exact tone and pacing, and do not add or invent content. "
                         f"Translate EVERY sentence — do not summarise or shorten. "
                         f"Return ONLY the translated text, nothing else:\n\n{chapter}"}],
                     max_tokens=1600, temperature=0.3)
                 translated = resp.choices[0].message.content.strip()
                 wc_orig = len(chapter.split())
                 wc_trans = len(translated.split())
-                # Sanity check: translation should be roughly same length
                 if wc_trans < wc_orig * 0.5 and attempt < 2:
                     print(f"     ⚠️ Translation too short ({wc_trans}/{wc_orig} words), retry...")
                     continue
@@ -1036,7 +972,6 @@ def translate_script(script, shorts_script, metadata, target_lang):
             except Exception as e:
                 print(f"     ⚠️ Attempt {attempt+1} failed: {e}")
                 if attempt == 2:
-                    # Fallback: keep original English chapter
                     translated_chapters.append(chapter)
         import time as _t2; _t2.sleep(1)
 
@@ -1044,7 +979,6 @@ def translate_script(script, shorts_script, metadata, target_lang):
     total_wc = len(translated_script.split())
     print(f"  ✅ Translation complete: {total_wc} words (~{total_wc//150} min)")
 
-    # FIX: Translate shorts and metadata using structured JSON output
     meta_prompt = f"""Translate ALL of the following to {lang_name}.
 Return ONLY a valid JSON object with these exact keys. No markdown, no extra text.
 
@@ -1065,21 +999,18 @@ Translate the values to {lang_name}. Return valid JSON only."""
             messages=[{"role": "user", "content": meta_prompt}],
             max_tokens=1500, temperature=0.3)
         raw = resp2.choices[0].message.content.strip()
-        # Strip markdown fences if present
         raw = re.sub(r'^```[a-z]*\n?', '', raw)
         raw = re.sub(r'\n?```$', '', raw)
         translated_meta = json.loads(raw)
 
-        # Update metadata with translations
-        metadata = dict(metadata)  # copy
+        metadata = dict(metadata)
         metadata["title"]          = translated_meta.get("title", metadata["title"])
         metadata["description"]    = translated_meta.get("description", metadata["description"])
         metadata["pinned_comment"] = translated_meta.get("pinned_comment", metadata["pinned_comment"])
         metadata["community_post"] = translated_meta.get("community_post", metadata["community_post"])
         translated_shorts          = translated_meta.get("shorts_script", shorts_script)
 
-        # Rebuild full description with translated parts
-        chapters = metadata.get("chapters", "0:00 Hook")
+        chapters_txt = metadata.get("chapters", "0:00 Hook")
         lang_suffix = lang_info.get("hashtag_suffix", "")
         trending = getattr(config, "TRENDING_HASHTAGS", [])
         hashtags = " ".join(config.BASE_HASHTAGS[:10] + trending[:3]) + lang_suffix
@@ -1087,16 +1018,17 @@ Translate the values to {lang_name}. Return valid JSON only."""
         metadata["full_description"] = f"""{metadata['description']}
 
 ⏱️ CHAPTERS:
-{chapters}
+{chapters_txt}
 
 🔔 Subscribe for daily true crime → {config.CHANNEL_HANDLE}
-👍 Like if this gave you chills
-💬 Drop your theory below — we read every comment!
+👍 Like if this case interested you
+💬 Share your thoughts below
 🔕 Turn on notifications so you never miss a case
 
 {hashtags}
 
-© {config.CHANNEL_NAME} — Educational purposes only. All content based on public records."""
+Sources: publicly available records and reporting.
+© {config.CHANNEL_NAME} — Educational purposes only."""
 
     except Exception as e:
         print(f"  ⚠️ Metadata translation parse failed: {e} — using English metadata")
@@ -1107,50 +1039,85 @@ Translate the values to {lang_name}. Return valid JSON only."""
 
 
 # ============================================
-# STEP 6 — VOICEOVER
+# STEP 6 — VOICEOVER WITH CAPTIONS + MASTERING
+# ============================================
+# CHANGED: now captures edge-tts word-boundary timestamps as it
+# synthesizes each chunk, so we get burned-in captions "for free"
+# from the same TTS call rather than a second transcription pass.
+# Also runs the final audio through an ffmpeg loudnorm + light
+# compression pass for consistent, professional voice level.
+# Returns (audio_path, captions_path) — captions_path may be None if
+# something failed, callers should treat that as "no captions".
 # ============================================
 
-async def _edge_tts_chunk(text, voice, output_path, rate=None, volume=None):
+async def _tts_chunk_with_words(text, voice, output_path, rate=None, volume=None):
     rate   = rate   or config.TTS_RATE
     volume = volume or config.TTS_VOLUME
     communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
-    await communicate.save(output_path)
+    word_marks = []
+    with open(output_path, "wb") as f:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                f.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                word_marks.append({
+                    "text": chunk["text"],
+                    "start": chunk["offset"] / 10_000_000,
+                    "end": (chunk["offset"] + chunk["duration"]) / 10_000_000,
+                })
+    return word_marks
+
+def master_audio(in_path, target_lufs=-16.0):
+    """Two-pass-ish loudnorm + light compression via ffmpeg. Falls back
+    to the original file if ffmpeg isn't available or fails."""
+    out_path = in_path.replace(".mp3", "_mastered.mp3")
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-i", in_path,
+            "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11,"
+                   f"acompressor=threshold=-18dB:ratio=3:attack=5:release=50",
+            "-ar", "44100", out_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=180)
+        if result.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
+            print(f"  🎚️  Audio mastered to {target_lufs} LUFS")
+            return out_path
+        print(f"  ⚠️ ffmpeg mastering failed, using original: {str(result.stderr)[-200:]}")
+    except Exception as e:
+        print(f"  ⚠️ Audio mastering skipped ({e})")
+    return in_path
 
 def generate_voiceover(script, label="voiceover", voice=None, rate=None):
     """
-    v18 FIXED TTS: retry per chunk, ssl=False, minimum duration check.
-    Each chunk retried 3x before falling back to silence.
+    Same chunking/retry robustness as before, but now also captures
+    word-level timing (for captions) and masters the final audio.
+    Returns (audio_path, captions_path).
     """
     import time as _t
     voice  = voice  or config.TTS_VOICE
     rate   = rate   or config.TTS_RATE
     print(f"\n🎙️  Generating {label} with edge-tts ({voice})...")
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
-    audio_path = os.path.join(config.OUTPUT_FOLDER, f"{label}.mp3")
+    audio_path    = os.path.join(config.OUTPUT_FOLDER, f"{label}.mp3")
+    captions_path = os.path.join(config.OUTPUT_FOLDER, f"{label}_captions.json")
 
-    # Clean script — strip stage directions and markers
     clean = re.sub(r'\[.*?\]', '', script)
     clean = clean.replace("[PAUSE]", " ... ").strip()
     clean = re.sub(r'\n{3,}', '\n\n', clean)
     clean = re.sub(r'\*+', '', clean)
-    clean = re.sub(r'#+\s*', '', clean)   # strip markdown headers
+    clean = re.sub(r'#+\s*', '', clean)
 
     wc = len(clean.split())
     print(f"  📝 Script: {wc} words → expected ~{wc//150} min audio")
 
-    # Split into chunks of 2800 chars (safe under edge-tts limit)
     max_chars = 2800
     chunks    = []
     remaining = clean
     while len(remaining) > max_chars:
-        # Try to cut at sentence boundary
         cut = remaining.rfind('. ', 0, max_chars)
-        if cut == -1:
-            cut = remaining.rfind('? ', 0, max_chars)
-        if cut == -1:
-            cut = remaining.rfind('! ', 0, max_chars)
-        if cut == -1:
-            cut = max_chars
+        if cut == -1: cut = remaining.rfind('? ', 0, max_chars)
+        if cut == -1: cut = remaining.rfind('! ', 0, max_chars)
+        if cut == -1: cut = max_chars
         chunks.append(remaining[:cut + 1].strip())
         remaining = remaining[cut + 1:].strip()
     if remaining.strip():
@@ -1158,7 +1125,9 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
 
     print(f"  📦 {len(chunks)} chunks to process")
 
-    chunk_paths = []
+    chunk_paths   = []
+    all_words     = []
+    time_offset   = 0.0
     failed_chunks = 0
 
     for i, chunk in enumerate(chunks):
@@ -1167,13 +1136,18 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
         p = os.path.join(config.OUTPUT_FOLDER, f"edge_chunk_{i}.mp3")
         success = False
 
-        # Retry up to 3 times per chunk
         for attempt in range(3):
             try:
-                asyncio.run(_edge_tts_chunk(chunk, voice, p, rate))
+                marks = asyncio.run(_tts_chunk_with_words(chunk, voice, p, rate))
                 if os.path.exists(p) and os.path.getsize(p) > 1000:
+                    for m in marks:
+                        m["start"] += time_offset
+                        m["end"]   += time_offset
+                    all_words.extend(marks)
+                    chunk_dur = AudioFileClip(p).duration
+                    time_offset += chunk_dur
                     chunk_paths.append(p)
-                    print(f"  🎙️ Chunk {i+1}/{len(chunks)} ✅ ({len(chunk.split())} words)")
+                    print(f"  🎙️ Chunk {i+1}/{len(chunks)} ✅ ({len(chunk.split())} words, {len(marks)} cues)")
                     success = True
                     break
                 else:
@@ -1185,18 +1159,18 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
 
         if not success:
             print(f"  ❌ Chunk {i+1} failed all 3 attempts — generating silence")
-            # Estimate duration: ~150 wpm, so words/150 * 60 seconds
             silence_dur = max(5.0, len(chunk.split()) / 150 * 60)
             silent = AudioClip(lambda t: 0, duration=silence_dur)
             silent.write_audiofile(p, fps=44100, logger=None)
             chunk_paths.append(p)
+            time_offset += silence_dur
             failed_chunks += 1
 
     if not chunk_paths:
         print("❌ ALL TTS chunks failed — creating placeholder audio")
         placeholder = AudioClip(lambda t: 0, duration=60)
         placeholder.write_audiofile(audio_path, fps=44100, logger=None)
-        return audio_path
+        return audio_path, None
 
     if len(chunk_paths) == 1:
         shutil.copy(chunk_paths[0], audio_path)
@@ -1214,14 +1188,20 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
         else:
             shutil.copy(chunk_paths[0], audio_path)
 
-    # Cleanup
     for p in chunk_paths:
         try: os.remove(p)
         except: pass
 
-    # Final duration check
+    if all_words:
+        with open(captions_path, "w") as f:
+            json.dump(all_words, f)
+    else:
+        captions_path = None
+
+    mastered_path = master_audio(audio_path)
+
     try:
-        final_audio = AudioFileClip(audio_path)
+        final_audio = AudioFileClip(mastered_path)
         dur_min = final_audio.duration / 60
         final_audio.close()
         print(f"✅ Voiceover done: {dur_min:.1f} min ({label})")
@@ -1230,21 +1210,53 @@ def generate_voiceover(script, label="voiceover", voice=None, rate=None):
     except Exception:
         print(f"✅ Voiceover done ({label})")
 
-    return audio_path
+    return mastered_path, captions_path
+
+
+def words_to_caption_lines(word_marks, max_words_per_line=5):
+    lines = []
+    cur, cur_start = [], None
+    for w in word_marks:
+        if cur_start is None:
+            cur_start = w["start"]
+        cur.append(w["text"])
+        if len(cur) >= max_words_per_line:
+            lines.append({"text": " ".join(cur), "start": cur_start, "end": w["end"]})
+            cur, cur_start = [], None
+    if cur:
+        lines.append({"text": " ".join(cur), "start": cur_start, "end": word_marks[-1]["end"]})
+    return lines
+
+
+def build_caption_clips(captions_path, W=1920, H=1080):
+    """Returns MoviePy TextClips timed to the audio, or [] if unavailable."""
+    if not captions_path or not os.path.exists(captions_path):
+        return []
+    try:
+        with open(captions_path) as f:
+            word_marks = json.load(f)
+    except Exception:
+        return []
+    if not word_marks:
+        return []
+    lines = words_to_caption_lines(word_marks)
+    clips = []
+    for line in lines:
+        dur = max(0.3, line["end"] - line["start"])
+        try:
+            txt = TextClip(
+                line["text"].upper(), fontsize=64, color="white",
+                font="Liberation-Sans-Bold", stroke_color="black", stroke_width=3,
+                method="caption", size=(int(W*0.85), None),
+            ).set_start(line["start"]).set_duration(dur).set_position(("center", H-260))
+        except Exception:
+            continue
+        clips.append(txt)
+    return clips
 
 
 # ============================================
-# STEP 6b — BACKGROUND MUSIC
-# ============================================
-
-# ============================================
-# v12 COPYRIGHT FIX: Background music DISABLED
-# ============================================
-# WHY: Every Pixabay/CDN URL — even "free" tracks — can carry a
-# YouTube Content ID claim that mutes or demonetises your video.
-# Voice-only is the default used by top true crime channels.
-# To add music later: use ONLY YouTube Audio Library tracks
-# (studio.youtube.com > Audio Library) — pre-cleared for YT.
+# STEP 6b — BACKGROUND MUSIC (still disabled — copyright safety)
 # ============================================
 
 def fetch_background_music():
@@ -1252,7 +1264,6 @@ def fetch_background_music():
     return None
 
 def mix_audio_with_music(voice_path, music_path, output_path):
-    # Always return voice-only — safe from Content ID claims
     print("  🎙️ Voice-only audio (copyright safe)")
     return voice_path
 
@@ -1309,6 +1320,15 @@ def make_ken_burns_clip(img_path, duration, direction, W=1920, H=1080):
     return clip
 
 
+def faster_ken_burns_schedule(n_slots, min_dur=3.5, max_dur=6.5, seed=0):
+    """
+    Varied per-slot durations so cuts feel edited rather than a fixed
+    8s/14s metronome on every single video.
+    """
+    rng = random.Random(seed)
+    return [round(rng.uniform(min_dur, max_dur), 2) for _ in range(n_slots)]
+
+
 # ============================================
 # STEP 8 — PROCESS VIDEO CLIP (1080p)
 # ============================================
@@ -1337,7 +1357,7 @@ def process_video_clip(vid_info, duration, W=1920, H=1080):
 
 
 # ============================================
-# STEP 9 — CHAPTER CARDS (Cinematic Style)
+# STEP 9 — CHAPTER CARDS + TIMELINE GRAPHIC
 # ============================================
 
 def create_chapter_card(text, duration=3.0, W=1920, H=1080, style="cinematic"):
@@ -1374,19 +1394,58 @@ def create_chapter_card(text, duration=3.0, W=1920, H=1080, style="cinematic"):
     return clip
 
 
+def create_timeline_card(events, duration=5.0, W=1920, H=1080):
+    """
+    events: list of {"date": "...", "label": "..."} (3-6 items, keep
+    labels short). Gives some chapter breaks a genuinely different
+    look — a documented timeline — instead of every break being the
+    same red-text-on-black card.
+    """
+    font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+    font_small = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+
+    def make_frame(t):
+        alpha = min(t / 0.6, 1.0)
+        img = Image.new("RGB", (W, H), (8, 8, 10))
+        draw = ImageDraw.Draw(img)
+        try:
+            f_date = ImageFont.truetype(font_path, 34)
+            f_label = ImageFont.truetype(font_small, 30)
+            f_title = ImageFont.truetype(font_path, 44)
+        except Exception:
+            f_date = f_label = f_title = ImageFont.load_default()
+
+        draw.text((80, 60), "TIMELINE", font=f_title, fill=(int(220*alpha), 0, 0))
+        line_x = 140
+        top, bottom = 160, H - 100
+        draw.line([(line_x, top), (line_x, bottom)], fill=(90, 0, 0), width=4)
+
+        n = max(len(events), 1)
+        for i, ev in enumerate(events[:6]):
+            y = top + (bottom - top) * (i / max(n - 1, 1))
+            draw.ellipse([(line_x-10, y-10), (line_x+10, y+10)], fill=(int(220*alpha), 0, 0))
+            draw.text((line_x + 40, y - 24), ev.get("date", ""), font=f_date,
+                       fill=(int(255*alpha), int(255*alpha), int(255*alpha)))
+            draw.text((line_x + 40, y + 12), ev.get("label", "")[:70], font=f_label,
+                       fill=(int(200*alpha), int(200*alpha), int(200*alpha)))
+        return np.array(img)
+
+    clip = VideoClip(make_frame, duration=duration)
+    clip.size = (W, H)
+    return clip
+
+
 # ============================================
-# STEP 10 — ASSEMBLE MAIN VIDEO (1080p, 20min)
+# STEP 10 — ASSEMBLE MAIN VIDEO (1080p, captions, varied pacing)
 # ============================================
 
-def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, story):
+def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, story, captions_path=None):
     W, H = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
     print(f"\n🎬 Step 10: Assembling {W}x{H} documentary video...")
     audio     = AudioFileClip(audio_path)
     total_dur = audio.duration
 
-    # Hard cap at 14:30 — YouTube unverified accounts have 15-min limit
-    # After verifying your account (phone), remove this cap for 20+ min videos
-    MAX_DURATION = 14.5 * 60  # 14 min 30 sec
+    MAX_DURATION = 14.5 * 60  # YouTube unverified-account limit
     if total_dur > MAX_DURATION:
         print(f"  ✂️  Trimming audio from {total_dur/60:.1f} min to {MAX_DURATION/60:.1f} min (YouTube unverified limit)")
         audio = audio.subclip(0, MAX_DURATION)
@@ -1397,33 +1456,44 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     print(f"  🎥 Videos   : {len(video_clips)}")
 
     KB_DIRS    = ["zoom_in","zoom_out","pan_left","pan_right","pan_up","diagonal","slow_zoom"]
-    IMG_DUR    = 8.0
-    VID_DUR    = 14.0
     CARD_DUR   = 3.0
     CARD_EVERY = 4
 
-    media_sequence = []
+    # Build a media plan first (type + source), THEN assign varied
+    # durations from faster_ken_burns_schedule instead of a fixed
+    # IMG_DUR=8.0 / VID_DUR=14.0 for every single slot.
+    media_plan = []
     img_idx = vid_idx = 0
     while True:
         for _ in range(2):
             if image_paths:
-                media_sequence.append(("image", image_paths[img_idx % len(image_paths)], IMG_DUR, KB_DIRS[img_idx % len(KB_DIRS)]))
+                media_plan.append(("image", image_paths[img_idx % len(image_paths)], KB_DIRS[img_idx % len(KB_DIRS)]))
                 img_idx += 1
         if video_clips:
-            media_sequence.append(("video", video_clips[vid_idx % len(video_clips)], VID_DUR, None))
+            media_plan.append(("video", video_clips[vid_idx % len(video_clips)], None))
             vid_idx += 1
-        total_estimated = sum(m[2] for m in media_sequence) + (len(media_sequence)//CARD_EVERY) * CARD_DUR
-        if total_estimated >= total_dur + 30: break
-        if len(media_sequence) > 600: break
+        # rough estimate assuming ~5s/image, ~10s/video average for the break check
+        est = sum(5.0 if m[0]=="image" else 10.0 for m in media_plan) + (len(media_plan)//CARD_EVERY) * CARD_DUR
+        if est >= total_dur + 30: break
+        if len(media_plan) > 700: break
 
-    print(f"  🎞️  Media slots: {len(media_sequence)}")
+    img_durs = faster_ken_burns_schedule(sum(1 for m in media_plan if m[0]=="image"), 3.5, 6.5, seed=hash(story["title"]) % 1000)
+    vid_durs = faster_ken_burns_schedule(sum(1 for m in media_plan if m[0]=="video"), 8.0, 14.0, seed=hash(story["title"]) % 1000 + 1)
+    img_iter, vid_iter = iter(img_durs), iter(vid_durs)
+
+    media_sequence = []
+    for m_type, m_data, m_extra in media_plan:
+        dur = next(img_iter, 5.0) if m_type == "image" else next(vid_iter, 10.0)
+        media_sequence.append((m_type, m_data, dur, m_extra))
+
+    print(f"  🎞️  Media slots: {len(media_sequence)} (varied duration)")
 
     clips     = []
     time_used = 0.0
     clips.append(create_chapter_card(metadata.get("title","True Crime")[:55], duration=5.0))
     time_used += 5.0
 
-    chapter_names = ["The Background","The Crime","The Investigation","The Shocking Truth","The Aftermath"]
+    chapter_names = ["The Background","The Case","The Investigation","The Outcome","The Aftermath"]
     chapter_count = media_count = 0
 
     for m_type, m_data, m_dur, m_extra in media_sequence:
@@ -1434,7 +1504,14 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
             cd = min(CARD_DUR, remaining - 0.5)
             if cd > 0.5:
                 name = chapter_names[min(chapter_count, len(chapter_names)-1)]
-                clips.append(create_chapter_card(f"Chapter {chapter_count+1}: {name}", duration=cd))
+                # every 3rd break uses a timeline card instead of a plain
+                # chapter card, for visual variety
+                if chapter_count % 3 == 2:
+                    events = [{"date": "", "label": f"Chapter {chapter_count+1}"},
+                              {"date": "", "label": name}]
+                    clips.append(create_timeline_card(events, duration=cd))
+                else:
+                    clips.append(create_chapter_card(f"Chapter {chapter_count+1}: {name}", duration=cd))
                 time_used += cd
                 chapter_count += 1
                 remaining = total_dur - time_used
@@ -1457,7 +1534,7 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
         media_count += 1
 
     outro_dur = min(4.0, max(0.5, total_dur - time_used))
-    clips.append(create_chapter_card("🔴 Subscribe for Daily Mysteries", duration=outro_dur))
+    clips.append(create_chapter_card("🔴 Subscribe for Daily Cases", duration=outro_dur))
 
     print(f"  🔗 Joining {len(clips)} clips...")
     try:
@@ -1483,7 +1560,14 @@ def assemble_documentary_video(audio_path, image_paths, video_clips, metadata, s
     _wm_clip.size = (W, 44)
     wm    = _wm_clip.set_position(("left","bottom")).set_opacity(config.WATERMARK_OPACITY)
     final = CompositeVideoClip([video, wm], size=(W, H)).set_audio(audio)
-    out   = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
+
+    # Burned-in captions from the TTS word-boundary timestamps
+    caption_clips = build_caption_clips(captions_path, W, H)
+    if caption_clips:
+        print(f"  💬 Adding {len(caption_clips)} caption cues")
+        final = CompositeVideoClip([final] + caption_clips, size=(W, H)).set_audio(audio)
+
+    out = os.path.join(config.OUTPUT_FOLDER, "final_video.mp4")
     print("  💾 Writing final video (1080p)...")
     final.write_videofile(out, fps=config.VIDEO_FPS, codec="libx264", audio_codec="aac",
                           threads=2, preset="ultrafast", bitrate=config.VIDEO_BITRATE, logger=None)
@@ -1600,7 +1684,6 @@ def assemble_shorts_video(shorts_audio_path, image_paths, metadata):
 
 # ============================================
 # STEP 11 — THUMBNAIL (4 Styles, A/B Testing)
-# FIX: Story-seeded randomisation prevents repeated thumbnails
 # ============================================
 
 def _wrap_text(draw, text, font, max_width):
@@ -1628,14 +1711,8 @@ def _draw_text_shadow(draw, x, y, text, font, fill, shadow=(0,0,0), depth=4):
     draw.text((x, y), text, font=font, fill=fill)
 
 def _best_bg_image(image_paths, story_title=""):
-    """
-    FIX: Use story title as random seed so every story gets a different
-    background image, preventing repeated thumbnail visuals.
-    Score all candidates, then pick randomly from the top 3.
-    """
     import random as _r
     rng = _r.Random(hash(story_title) % 2**31)
-    # Score more candidates than before (up to 12)
     candidates = image_paths[:min(12, len(image_paths))] if len(image_paths) >= 3 else image_paths
     scored = []
     for p in candidates:
@@ -1648,30 +1725,21 @@ def _best_bg_image(image_paths, story_title=""):
         except:
             scored.append((0, p))
     scored.sort(reverse=True)
-    # FIX: Pick randomly from top 3 (not always the absolute best)
     top3 = [p for _, p in scored[:3]]
     return rng.choice(top3)
 
 def create_thumbnail(image_paths, metadata, story):
-    """
-    v13 THUMBNAIL REDESIGN — guaranteed visible text regardless of background.
-    Layout: dark-tinted BG image + bright yellow headline + red band + channel badge.
-    Inspired by: Kendall Rae, JCS, Coffeehouse Crime thumbnail style.
-    """
     print("\n🖼️  Step 11: Creating thumbnail...")
     W, H  = config.THUMBNAIL_WIDTH, config.THUMBNAIL_HEIGHT
     thumb = os.path.join(config.OUTPUT_FOLDER, "thumbnail.jpg")
 
-    thumb_text = metadata.get("thumbnail_text", "SHOCKING CASE").upper().strip()
-    # Trim to 4 words max — shorter text = bigger font = more readable
+    thumb_text = metadata.get("thumbnail_text", "TRUE CRIME CASE").upper().strip()
     words = thumb_text.split()[:4]
     thumb_text = " ".join(words)
 
     raw_title = metadata.get("title", story["title"])
-    # Trim title to 2 lines max for bottom bar
     title_display = raw_title[:60] + ("..." if len(raw_title) > 60 else "")
 
-    # ── FONTS ────────────────────────────────────────────────────────────────
     FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
     FONT_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
     BEBAS     = BEBAS_FONT_PATH or config.FONT_CACHE_PATH
@@ -1687,7 +1755,6 @@ def create_thumbnail(image_paths, metadata, story):
     except:
         f_hl = f_sub = f_tag = f_tiny = ImageFont.load_default()
 
-    # ── BACKGROUND ───────────────────────────────────────────────────────────
     bg_path  = _best_bg_image(image_paths, story_title=raw_title) if image_paths else None
     base_img = Image.new("RGB", (W, H), (15, 0, 0))
     if bg_path:
@@ -1696,16 +1763,13 @@ def create_thumbnail(image_paths, metadata, story):
         except:
             pass
 
-    # Darken + desaturate the background so text pops
     img = ImageEnhance.Brightness(base_img).enhance(0.40)
     img = ImageEnhance.Color(img).enhance(0.55)
     img = ImageEnhance.Contrast(img).enhance(1.20)
 
-    # Gradient darkening: bottom 60% darker so text band is clear
     grad = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     gd   = ImageDraw.Draw(grad)
     for row in range(H):
-        # Stronger darkness in bottom half where text lives
         frac  = row / H
         alpha = int(80 + 140 * max(0, frac - 0.25))
         alpha = min(alpha, 210)
@@ -1713,40 +1777,31 @@ def create_thumbnail(image_paths, metadata, story):
     img = Image.alpha_composite(img.convert("RGBA"), grad).convert("RGB")
     draw = ImageDraw.Draw(img)
 
-    # ── RED ACCENT LINE (top) ─────────────────────────────────────────────────
     draw.rectangle([(0, 0), (W, 8)], fill=(220, 0, 0))
 
-    # ── CHANNEL BADGE (top-left) ──────────────────────────────────────────────
     badge_text = "▶  " + config.CHANNEL_NAME.upper()
     bw = draw.textbbox((0, 0), badge_text, font=f_tag)[2]
     draw.rounded_rectangle([(16, 16), (bw + 44, 48)], radius=5, fill=(200, 0, 0))
     draw.text((28, 20), badge_text, font=f_tag, fill=(255, 255, 255))
 
-    # ── MAIN HEADLINE TEXT (center of image) ──────────────────────────────────
-    # Split into lines if needed
     lines = _wrap_text(draw, thumb_text, f_hl, W - 80)
     line_h = draw.textbbox((0, 0), "Ag", font=f_hl)[3] + 12
     total_h = line_h * len(lines)
-    # Position: vertically centered in the middle third of the image
     text_y = (H // 2) - (total_h // 2) - 30
 
     for i, line in enumerate(lines):
         lw = draw.textbbox((0, 0), line, font=f_hl)[2]
         x  = (W - lw) // 2
         y  = text_y + i * line_h
-        # Multi-layer shadow for readability on any background
         for sx, sy in [(-4,-4),(4,-4),(-4,4),(4,4),(0,5),(5,0),(-5,0),(0,-5)]:
             draw.text((x+sx, y+sy), line, font=f_hl, fill=(0, 0, 0))
-        # Yellow-white gradient effect: first line bright yellow, rest white
         color = (255, 230, 0) if i == 0 else (255, 255, 255)
         draw.text((x, y), line, font=f_hl, fill=color)
 
-    # ── BOTTOM DARK BAND with title ───────────────────────────────────────────
     band_top = H - 90
     draw.rectangle([(0, band_top), (W, H)], fill=(10, 0, 0))
     draw.rectangle([(0, band_top), (W, band_top + 4)], fill=(200, 0, 0))
 
-    # Wrap and draw title in bottom band
     t_lines = _wrap_text(draw, title_display, f_sub, W - 60)
     t_y = band_top + 10
     for tline in t_lines[:2]:
@@ -1754,7 +1809,6 @@ def create_thumbnail(image_paths, metadata, story):
         draw.text(((W - tw) // 2, t_y), tline, font=f_sub, fill=(240, 240, 240))
         t_y += 42
 
-    # ── SAVE ──────────────────────────────────────────────────────────────────
     img.save(thumb, "JPEG", quality=95, optimize=True)
     size_kb = os.path.getsize(thumb) // 1024
     print(f"✅ Thumbnail: '{thumb_text}' | {W}x{H} | {size_kb}KB")
@@ -1763,15 +1817,6 @@ def create_thumbnail(image_paths, metadata, story):
 
 # ============================================
 # STEP 12 — UPLOAD TO YOUTUBE
-# FIX: Now accepts language parameter and sets correct defaultLanguage
-# ============================================
-
-# ============================================
-# PLAYLIST MANAGER — v14 SEO
-# ============================================
-# Playlists are indexed by YouTube search independently of videos.
-# A "Serial Killers Documentary" playlist ranks for that keyword
-# even if individual videos haven't gained traction yet.
 # ============================================
 
 PLAYLIST_CACHE_FILE = "playlist_cache.json"
@@ -1789,10 +1834,6 @@ def save_playlist_cache(cache):
     with open(PLAYLIST_CACHE_FILE, "w") as f:
         json.dump(cache, f, indent=2)
 
-# Playlist definitions — one per topic, SEO-optimised titles
-# ── PLAYLIST DESCRIPTIONS PER LANGUAGE ─────────────────────────────────────
-# YouTube indexes playlist titles AND descriptions for search.
-# Native-language descriptions rank better in each country.
 PLAYLIST_DESCRIPTIONS = {
     "en": {
         "template": "A collection of true crime documentaries about {topic}. New cases added daily. Subscribe: {handle}",
@@ -1870,28 +1911,19 @@ PLAYLIST_DEFINITIONS = {
 }
 
 def get_or_create_playlist(yt, topic, language):
-    """
-    Get existing playlist ID or create a new one for this topic+language.
-    - Playlist title: native language (Hindi/Spanish/Portuguese/French/English)
-    - Playlist description: native language for SEO in each country
-    - Master "All Cases" playlist also created per language
-    """
     cache     = load_playlist_cache()
     cache_key = f"{topic}_{language}"
     if cache_key in cache:
         print(f"  📋 Using cached playlist: {cache[cache_key]}")
         return cache[cache_key]
 
-    # Get native-language title
     topic_key   = topic if topic in PLAYLIST_DEFINITIONS else "default"
     lang_titles = PLAYLIST_DEFINITIONS[topic_key]
     pl_title    = lang_titles.get(language, lang_titles["en"])
 
-    # Get native-language description
     lang_desc_cfg = PLAYLIST_DESCRIPTIONS.get(language, PLAYLIST_DESCRIPTIONS["en"])
 
     if topic == "default":
-        # Master playlist — use the dedicated master title/desc
         pl_title = lang_desc_cfg["master_title"]
         pl_desc  = lang_desc_cfg["master_desc"] + f" {config.CHANNEL_HANDLE}"
     else:
@@ -1924,7 +1956,6 @@ def get_or_create_playlist(yt, topic, language):
         return None
 
 def add_video_to_playlist(yt, video_id, playlist_id):
-    """Add a video to a playlist."""
     try:
         yt.playlistItems().insert(
             part="snippet",
@@ -1939,6 +1970,11 @@ def add_video_to_playlist(yt, video_id, playlist_id):
 
 
 def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, language="en"):
+    """
+    CHANGED: removed the second, synthetic "engagement" comment that
+    simulated viewer debate. Only the genuinely useful chapters/CTA
+    comment from the channel account is posted now.
+    """
     kind = "Short" if is_short else "Video"
     print(f"\n📤 Step 12: Uploading {kind} to YouTube ({language.upper()})...")
 
@@ -1962,8 +1998,6 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         description = metadata.get("full_description","")
         tags        = metadata.get("tags_list",[])
 
-    # FIX: Use the actual language code for this video
-    # ── BUILD VIDEO BODY WITH FULL SEO METADATA ─────────────────────────────
     body = {
         "snippet": {
             "title":                title,
@@ -1973,7 +2007,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
                     for t in tags
                     if t and t.strip() and len(t.strip().lstrip("#")) > 0
                 ][:500],
-            "categoryId":           "25",          # News & Politics (best for true crime)
+            "categoryId":           "25",
             "defaultLanguage":      language,
             "defaultAudioLanguage": language,
         },
@@ -1981,7 +2015,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
             "privacyStatus":             "public",
             "selfDeclaredMadeForKids":   False,
             "license":                   "youtube",
-            "embeddable":                True,      # Allow embedding — boosts external traffic
+            "embeddable":                True,
             "publicStatsViewable":       True,
         }
     }
@@ -1999,20 +2033,14 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
     vid   = resp.get("id")
     print(f"✅ {kind} uploaded! ID: {vid}")
 
-    # ── PUSH LOCALIZATIONS — makes video searchable in multiple languages ────
-    # YouTube indexes each localization independently, multiplying search reach
     if not is_short and vid:
         try:
             base_title = metadata.get("title", "")[:100]
             base_desc  = metadata.get("description", "")[:400]
-            # Build localizations dict from all supported languages
             localizations = {}
             for loc_lang, loc_cfg in config.SUPPORTED_LANGUAGES.items():
                 if loc_lang == language:
-                    continue  # already set as default
-                loc_name = loc_cfg.get("name", loc_lang)
-                # Use base English title/desc as fallback for other languages
-                # (proper translations only happen when that language runs its own pipeline)
+                    continue
                 localizations[loc_lang] = {
                     "title":       base_title,
                     "description": base_desc,
@@ -2026,13 +2054,11 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
         except Exception as e:
             print(f"  ⚠️ Localizations failed (non-critical): {e}")
 
-    # ── ADD TO TOPIC PLAYLIST (SEO: playlists rank independently) ────────────
     if not is_short:
         topic = metadata.get("topic", "default")
         pl_id = get_or_create_playlist(yt, topic, language)
         if pl_id:
             add_video_to_playlist(yt, vid, pl_id)
-        # Also add to master "All Cases" playlist
         master_pl = get_or_create_playlist(yt, "default", language)
         if master_pl and master_pl != pl_id:
             add_video_to_playlist(yt, vid, master_pl)
@@ -2052,7 +2078,6 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
                 thumb_ok = True
                 break
             except Exception as e:
-                import traceback
                 err_str = str(e)
                 print(f"  ❌ Thumbnail attempt {attempt}/3 failed: {err_str[:120]}")
                 if "forbidden" in err_str.lower() or "403" in err_str or "insufficientPermissions" in err_str:
@@ -2067,11 +2092,12 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
             print(f"  💾 Thumbnail saved for manual upload: {manual_path}")
 
     if not is_short:
-        pinned     = metadata.get("pinned_comment","What do YOU think happened? 👇")
-        tmpl       = random.choice(config.PINNED_COMMENT_TEMPLATES)
-        pinned_msg = tmpl.format(question=pinned, handle=config.CHANNEL_HANDLE)
+        # ── Single, genuinely useful pinned comment: chapters + CTA ──────────
+        # The previous second "engagement" comment that simulated a viewer
+        # debate question has been removed — it was synthetic engagement,
+        # posted from the channel's own account pretending to be organic
+        # discussion, and it worked against the channel more than for it.
         try:
-            # First comment: chapters (timestamps) = SEO gold + viewer retention
             chapters_text = metadata.get("chapters", "")
             first_comment_tmpl = getattr(config, "FIRST_COMMENT_TEMPLATE", "")
             if first_comment_tmpl and chapters_text:
@@ -2080,7 +2106,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
                     handle=config.CHANNEL_HANDLE
                 )
             else:
-                first_msg = pinned_msg  # fallback to regular pinned
+                first_msg = metadata.get("pinned_comment", "What do you think happened here?")
 
             thread = yt.commentThreads().insert(
                 part="snippet",
@@ -2092,14 +2118,7 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
                 ).execute()
             except Exception:
                 pass
-            print("✅ First comment (chapters + CTA) posted!")
-
-            # Second comment: the engagement question (drives algorithm signals)
-            import time as _t2; _t2.sleep(3)
-            yt.commentThreads().insert(
-                part="snippet",
-                body={"snippet":{"videoId":vid,"topLevelComment":{"snippet":{"textOriginal":pinned_msg}}}}).execute()
-            print("✅ Engagement comment posted!")
+            print("✅ Pinned comment (chapters + CTA) posted!")
         except Exception as e:
             print(f"⚠️ Comment: {e}")
 
@@ -2109,13 +2128,11 @@ def upload_to_youtube(video_path, thumbnail_path, metadata, is_short=False, lang
 
 # ============================================
 # MAIN PIPELINE
-# FIX: Now reads BOT_LANGUAGE env var to run any language
 # ============================================
 
 def run_pipeline():
     global BEBAS_FONT_PATH
 
-    # v11: Read language from environment variable
     lang = os.environ.get("BOT_LANGUAGE", "en").strip().lower()
     lang_cfg  = config.SUPPORTED_LANGUAGES.get(lang, config.SUPPORTED_LANGUAGES["en"])
     lang_name = lang_cfg.get("name", "English")
@@ -2123,20 +2140,17 @@ def run_pipeline():
     rate      = lang_cfg.get("rate",  config.TTS_RATE)
 
     print("="*55)
-    print(f"🚀 ARCHIVE OF ENIGMAS — Pipeline v11 | Lang: {lang_name}")
+    print(f"🚀 ARCHIVE OF ENIGMAS — Pipeline v12 | Lang: {lang_name}")
     print("="*55)
     os.makedirs(config.OUTPUT_FOLDER, exist_ok=True)
 
-    # v11 FIX: Download Bebas Neue font once per run for better thumbnails
     BEBAS_FONT_PATH = ensure_bebas_font()
 
     try:
-        # 1. Fetch story (Wikipedia = English guaranteed)
         story = fetch_story()
         topic = story.get("topic", "other")
         print(f"  📌 Topic: {topic} | Language: {lang_name}")
 
-        # 2. Generate script
         if lang == "en":
             script, shorts_script, metadata = generate_script(story, language="en")
         else:
@@ -2144,30 +2158,25 @@ def run_pipeline():
             script, shorts_script, metadata = generate_script(story, language="en")
             script, shorts_script, metadata = translate_script(script, shorts_script, metadata, lang)
 
-        # 3. Fetch media
         img_queries, vid_queries = extract_keywords(story)
         image_paths = fetch_images(img_queries, target=24)
         video_clips = fetch_videos(vid_queries, target=14)
 
-        # 4. Voiceover with language-specific voice
-        audio_path        = generate_voiceover(script, label=f"voiceover_{lang}", voice=voice, rate=rate)
+        audio_path, captions_path = generate_voiceover(script, label=f"voiceover_{lang}", voice=voice, rate=rate)
         shorts_audio_path = None
         if shorts_script:
-            shorts_audio_path = generate_voiceover(
+            shorts_audio_path, _shorts_captions = generate_voiceover(
                 shorts_script, label=f"shorts_voiceover_{lang}", voice=voice, rate=rate)
 
-        # 4b. Background music
         music_path       = fetch_background_music()
         mixed_audio_path = os.path.join(config.OUTPUT_FOLDER, f"voiceover_{lang}_mixed.mp3")
-        audio_path       = mix_audio_with_music(audio_path, music_path, mixed_audio_path)
+        audio_path        = mix_audio_with_music(audio_path, music_path, mixed_audio_path)
 
-        # 5. Thumbnail (story-seeded, no repeats, Bebas Neue font)
         thumbnail_path = create_thumbnail(image_paths, metadata, story)
 
-        # 6. Assemble main video
-        video_path = assemble_documentary_video(audio_path, image_paths, video_clips, metadata, story)
+        video_path = assemble_documentary_video(
+            audio_path, image_paths, video_clips, metadata, story, captions_path=captions_path)
 
-        # 7. Assemble Shorts
         shorts_path = None
         if shorts_audio_path and image_paths:
             try:
@@ -2175,7 +2184,6 @@ def run_pipeline():
             except Exception as e:
                 print(f"⚠️ Shorts assembly failed: {e}")
 
-        # 8. Upload with correct language metadata
         video_id = upload_to_youtube(video_path, thumbnail_path, metadata,
                                      is_short=False, language=lang)
         if video_id is None:
@@ -2189,7 +2197,6 @@ def run_pipeline():
             except Exception as e:
                 print(f"⚠️ Shorts upload failed: {e}")
 
-        # 9. v11 FIX: Update history for ALL languages (prevents cross-language topic duplicates)
         keywords = [story["title"].lower().split()[0]] if story["title"] else []
         update_history(metadata["title"], topic, keywords, lang=lang)
 
@@ -2203,7 +2210,7 @@ def run_pipeline():
         print(f"📊 Title   : {metadata.get('title')}")
         print(f"🎭 Style   : Thumbnail style {metadata.get('thumbnail_style','1')}")
         print(f"🔤 Font    : {'Bebas Neue' if BEBAS_FONT_PATH else 'LiberationSans (fallback)'}")
-        print(f"🎤 Voice   : edge-tts ({voice})")
+        print(f"🎤 Voice   : edge-tts ({voice}), mastered + captioned")
         print("="*55)
 
     except Exception as e:
