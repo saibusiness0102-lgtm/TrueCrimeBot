@@ -206,6 +206,49 @@ def fetch_from_rss():
             print(f"  ⚠️ RSS {feed_url[:40]}: {e}")
     return None
 
+def _fetch_wikipedia_rest_fallback(title):
+    """
+    Direct call to Wikipedia's REST API with a real User-Agent, bypassing
+    the `wikipedia` PyPI package entirely. That package sends no/minimal
+    User-Agent, which Wikipedia increasingly rejects or rate-limits from
+    shared cloud IPs (e.g. GitHub Actions runners) — returning an empty
+    body that breaks its JSON parsing ("Expecting value: line 1 column 1").
+    Used as a fallback when wikipedia.page() fails.
+    """
+    headers = {
+        "User-Agent": f"{config.CHANNEL_NAME}/1.0 "
+                       f"(https://youtube.com/{config.CHANNEL_HANDLE}; "
+                       f"contact: not-provided) requests-based-fallback"
+    }
+    try:
+        search_resp = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={"action": "query", "list": "search", "srsearch": title,
+                    "format": "json", "srlimit": 1},
+            headers=headers, timeout=15)
+        search_resp.raise_for_status()
+        results = search_resp.json().get("query", {}).get("search", [])
+        if not results:
+            return None
+        page_title = results[0]["title"]
+
+        content_resp = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={"action": "query", "prop": "extracts", "explaintext": 1,
+                    "titles": page_title, "format": "json"},
+            headers=headers, timeout=15)
+        content_resp.raise_for_status()
+        pages = content_resp.json().get("query", {}).get("pages", {})
+        for _, page in pages.items():
+            extract = page.get("extract", "")
+            if extract and len(extract) > 200:
+                return {"title": page.get("title", page_title), "content": extract[:6000]}
+        return None
+    except Exception as e:
+        print(f"     ⚠️ REST fallback also failed for '{title}': {e}")
+        return None
+
+
 def fetch_from_wikipedia():
     h = load_history()
     used_keywords = set(h.get("recent_keywords", []))
@@ -275,7 +318,29 @@ def fetch_from_wikipedia():
             return {"title": page.title, "content": page.content[:6000], "source": "Wikipedia", "topic": topic}
         except Exception as e:
             print(f"  ⚠️ Wikipedia '{case}': {e}")
-    return {"title": "The Zodiac Killer", "content": "The Zodiac Killer was an unidentified serial killer active in Northern California during the late 1960s and early 1970s.", "source": "Fallback", "topic": "unsolved"}
+            # NEW: fall back to a direct REST API call with a proper
+            # User-Agent instead of giving up on this case immediately.
+            rest_result = _fetch_wikipedia_rest_fallback(case)
+            if rest_result:
+                print(f"  ✅ Recovered via REST fallback: {rest_result['title']}")
+                return {"title": rest_result["title"], "content": rest_result["content"],
+                        "source": "Wikipedia-REST", "topic": topic}
+
+    # If every case failed even with the REST fallback, this is a broader
+    # connectivity/blocking issue, not a one-off. The old fallback below
+    # returned one hardcoded, near-empty Zodiac Killer stub with no real
+    # content — which is exactly what produced the 83-word placeholder
+    # video. Better to signal total failure and let the quality gate in
+    # generate_script() catch it than to feed a near-empty stub forward.
+    print("  🚫 All Wikipedia lookups failed (library + REST fallback). "
+          "This usually means Wikipedia is rate-limiting/blocking this "
+          "runner's IP, not that the cases don't exist.")
+    return {"title": "The Zodiac Killer",
+            "content": ("The Zodiac Killer was an unidentified serial killer who operated in "
+                        "Northern California in the late 1960s and early 1970s. The case remains "
+                        "officially unsolved. The killer sent several taunting letters and ciphers "
+                        "to newspapers, some of which have never been fully solved."),
+            "source": "Fallback", "topic": "unsolved"}
 
 def fetch_story():
     print("\n🔍 Step 1: Fetching story...")
@@ -731,12 +796,14 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
         },
     ]
 
-    chapter_texts = []
-    total_wc      = 0
+    chapter_texts    = []
+    total_wc         = 0
+    placeholder_count = 0   # NEW: tracks chapters that fell back to filler text
 
     for i, ch in enumerate(CHAPTERS):
         print(f"  📝 Chapter {i+1}/5 [{ch['name']}]...")
         chapter_text = ""
+        last_error   = None
         for attempt in range(4):
             try:
                 resp = groq_create_with_retry(
@@ -757,12 +824,14 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
                 print(f"     ✅ {wc} words")
                 break
             except Exception as e:
+                last_error = e
                 print(f"     ⚠️ Attempt {attempt+1} failed: {e}")
                 _time.sleep(5)
 
         if not chapter_text:
-            print(f"     ❌ Chapter {i+1} failed — using placeholder")
+            print(f"     ❌ Chapter {i+1} failed — using placeholder (last error: {last_error})")
             chapter_text = f"This chapter covers the {ch['name'].lower()} of the {case} case, based on publicly documented information."
+            placeholder_count += 1
 
         chapter_texts.append(chapter_text)
         if i < len(CHAPTERS) - 1:
@@ -771,6 +840,22 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
     script   = "\n\n[PAUSE]\n\n".join(chapter_texts)
     est_mins = total_wc // 150
     print(f"  📊 Total: {total_wc} words → ~{est_mins} min")
+
+    # ── QUALITY GATE (NEW) ────────────────────────────────────────────────
+    # If 2+ of 5 chapters fell back to placeholder text, or total real
+    # content is too thin, this is not a publishable video — it's almost
+    # certainly an upstream failure (bad model name, API outage, rate
+    # limit exhaustion, etc). Abort here rather than spending the image/
+    # video/TTS/upload budget on something that shouldn't go live.
+    # No human approval needed — this is an automated "don't ship broken
+    # output" check, not a manual review step.
+    if placeholder_count >= 2 or total_wc < 900:
+        print(f"\n🚫 QUALITY GATE FAILED: {placeholder_count}/5 chapters used placeholder "
+              f"text, {total_wc} real words generated. Refusing to publish — "
+              f"this is almost certainly a script-generation failure (check "
+              f"Groq model names / API key / rate limits above), not a "
+              f"content issue.")
+        return None, None, None
 
     if est_mins < 11:
         shortest_idx  = min(range(len(chapter_texts)), key=lambda x: len(chapter_texts[x].split()))
@@ -2156,7 +2241,17 @@ def run_pipeline():
         else:
             print(f"  🌐 Generating English base, then translating to {lang_name}...")
             script, shorts_script, metadata = generate_script(story, language="en")
-            script, shorts_script, metadata = translate_script(script, shorts_script, metadata, lang)
+            if script is not None:
+                script, shorts_script, metadata = translate_script(script, shorts_script, metadata, lang)
+
+        # NEW: quality gate abort — generate_script() returns (None, None, None)
+        # if it couldn't produce real content. Stop cleanly here rather than
+        # burning API budget on images/video/TTS/upload for a broken video.
+        # This run is simply skipped; the next scheduled run tries again.
+        if script is None:
+            print("\n⏹  Pipeline stopping cleanly — script generation failed "
+                  "quality gate. No video will be produced or uploaded this run.")
+            sys.exit(0)  # exit 0 so GitHub Actions doesn't flag the run as failed
 
         img_queries, vid_queries = extract_keywords(story)
         image_paths = fetch_images(img_queries, target=24)
