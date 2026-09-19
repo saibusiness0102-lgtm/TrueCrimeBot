@@ -810,11 +810,35 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
                     client,
                     model=fast_model,
                     messages=[{"role": "user", "content": ch["instruction"]}],
-                    max_tokens=1400,
-                    temperature=0.75   # lowered from 0.88 to reduce embellishment
+                    max_tokens=1800,   # widened: gpt-oss reasoning tokens eat into this budget
+                    temperature=0.75,  # lowered from 0.88 to reduce embellishment
+                    reasoning_effort="low"  # NEW: gpt-oss models burn max_tokens on hidden
+                                             # chain-of-thought at default effort, returning
+                                             # empty content. "low" leaves room for real output.
                 )
                 text = resp.choices[0].message.content.strip()
                 wc   = len(text.split())
+
+                # DIAGNOSTIC (temporary): reasoning_effort="low" alone did not
+                # fix empty completions on a prior run, and the failure was
+                # deterministic (0 words on every attempt) rather than the
+                # intermittent pattern of a token-budget issue — which points
+                # away from "reasoning ate the budget" and toward something
+                # else (safety filtering on real, sensitive case content;
+                # an SDK/param mismatch; etc). Logging finish_reason + usage
+                # here tells us definitively which, instead of guessing again.
+                if wc == 0:
+                    fr = getattr(resp.choices[0], "finish_reason", "unknown")
+                    usage = getattr(resp, "usage", None)
+                    reasoning_tok = None
+                    if usage is not None:
+                        details = getattr(usage, "completion_tokens_details", None)
+                        reasoning_tok = getattr(details, "reasoning_tokens", None) if details else None
+                    refusal = getattr(resp.choices[0].message, "refusal", None)
+                    print(f"     🔎 DEBUG empty completion — finish_reason={fr}, "
+                          f"reasoning_tokens={reasoning_tok}, refusal={refusal!r}, "
+                          f"usage={usage}")
+
                 if wc < 350 and attempt < 3:
                     print(f"     ⚠️ Too short ({wc} words), retrying {attempt+2}/4...")
                     _time.sleep(3)
@@ -871,7 +895,7 @@ IMPORTANT: Write ONLY the spoken words. No labels. No markdown."""
                     f"about {case}, based only on this context: {context}\n"
                     f"Add more documented detail and context — do not invent facts. "
                     f"Write ONLY spoken narration. {lang_instruction}"}],
-                max_tokens=1400, temperature=0.75)
+                max_tokens=1800, temperature=0.75, reasoning_effort="low")
             ext_text = ext.choices[0].message.content.strip()
             chapter_texts[shortest_idx] += "\n\n" + ext_text
             script   = "\n\n[PAUSE]\n\n".join(chapter_texts)
@@ -909,7 +933,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
             client,
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content": meta_prompt}],
-            max_tokens=900, temperature=0.6)
+            max_tokens=1400, temperature=0.6, reasoning_effort="low")
         meta_raw = meta_resp.choices[0].message.content
         cur_key, cur_val = None, []
         for line in meta_raw.strip().split("\n"):
@@ -954,7 +978,7 @@ CHAPTERS: (timestamps one per line format "0:00 Hook")"""
                 f"Para 2: the key documented facts. "
                 f"Para 3: the documented outcome/status + 'Follow for more real cases.' "
                 f"ONLY spoken words. {lang_instruction}"}],
-            max_tokens=300, temperature=0.7)
+            max_tokens=600, temperature=0.7, reasoning_effort="low")
         shorts_script = sh.choices[0].message.content.strip()
         print(f"  📱 Shorts: {len(shorts_script.split())} words")
     except Exception as e:
@@ -1044,7 +1068,7 @@ def translate_script(script, shorts_script, metadata, target_lang):
                         f"Keep the exact tone and pacing, and do not add or invent content. "
                         f"Translate EVERY sentence — do not summarise or shorten. "
                         f"Return ONLY the translated text, nothing else:\n\n{chapter}"}],
-                    max_tokens=1600, temperature=0.3)
+                    max_tokens=2000, temperature=0.3, reasoning_effort="low")
                 translated = resp.choices[0].message.content.strip()
                 wc_orig = len(chapter.split())
                 wc_trans = len(translated.split())
@@ -1082,7 +1106,7 @@ Translate the values to {lang_name}. Return valid JSON only."""
             client,
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content": meta_prompt}],
-            max_tokens=1500, temperature=0.3)
+            max_tokens=1900, temperature=0.3, reasoning_effort="low")
         raw = resp2.choices[0].message.content.strip()
         raw = re.sub(r'^```[a-z]*\n?', '', raw)
         raw = re.sub(r'\n?```$', '', raw)
